@@ -12,12 +12,13 @@ export function useMutationStatus() {
 export async function runMutation(
   setStatus: Dispatch<SetStateAction<MutationStatus>>,
   mutation: () => Promise<unknown>,
+  successMessage = 'Saved successfully.',
 ) {
   setStatus({ state: 'idle', message: '' })
 
   try {
     await mutation()
-    setStatus({ state: 'success', message: 'Saved to Supabase.' })
+    setStatus({ state: 'success', message: successMessage })
   } catch (error) {
     setStatus({
       state: 'error',

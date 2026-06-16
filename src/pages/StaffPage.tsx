@@ -55,7 +55,7 @@ export function StaffPage() {
           <>
             <NoticeList notices={data.notices} />
             <section className="content-grid">
-              <Panel title="Profile Directory" icon={UsersRound}>
+              <Panel title="Staff Directory" icon={UsersRound}>
                 <Toolbar value={search} onChange={setSearch} />
                 <div className="table-scroll">
                   <table className="data-table">
@@ -99,17 +99,16 @@ export function StaffPage() {
                     </tbody>
                   </table>
                 </div>
-                <p className="panel-note">{staff.length} total profiles</p>
+                <p className="panel-note">{staff.length} total staff accounts</p>
               </Panel>
 
-              <Panel title="Link Auth User" icon={ShieldCheck}>
+              <Panel title="Staff Details" icon={ShieldCheck}>
                 <p className="panel-note">
-                  Create the Supabase Auth user in the dashboard, then save the
-                  matching profile here.
+                  Save staff details here when an account already exists.
                 </p>
                 <MutationNotice status={status} />
                 <form className="form-grid" onSubmit={onSubmit}>
-                  <Field label="Auth user ID" name="id" required />
+                  <Field label="Account ID" name="id" required />
                   <Field label="Staff name" name="staff_name" required />
                   <Field label="Email" name="email" type="email" />
                   <Field label="Employee code" name="employee_code" />

@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Download,
+  Eye,
   Loader2,
   RefreshCw,
   Search,
@@ -10,10 +11,12 @@ import type { MutationStatus } from '../../hooks/useMutationStatus'
 import type {
   AdminNotice,
   AuditLog,
+  Location,
   ReportExport,
   SyncQueueItem,
 } from '../../types/admin'
 import { formatDate, formatNumber } from '../../utils/format'
+import { locationName } from '../../utils/relations'
 
 export function MessageState({
   icon: Icon,
@@ -54,7 +57,7 @@ export function QueryState<T>({
     return (
       <MessageState
         icon={AlertTriangle}
-        title="Supabase request failed"
+        title="We could not load this page"
         body={query.error}
       />
     )
@@ -64,8 +67,8 @@ export function QueryState<T>({
     return (
       <MessageState
         icon={AlertTriangle}
-        title="No data returned"
-        body="The request completed without a data payload."
+        title="No information found"
+        body="Refresh the page or try again in a moment."
       />
     )
   }
@@ -77,7 +80,7 @@ export function LoadingPanel() {
   return (
     <div className="panel loading-panel">
       <Loader2 size={22} />
-      <span>Loading Supabase data...</span>
+      <span>Loading your Bonibe admin workspace...</span>
     </div>
   )
 }
@@ -107,7 +110,7 @@ export function Metric({ label, value }: { label: string; value: number }) {
     <article className="metric-card">
       <span>{label}</span>
       <strong>{formatNumber(value)}</strong>
-      <small>Live from Supabase</small>
+      <small>Live company data</small>
     </article>
   )
 }
@@ -156,7 +159,7 @@ export function NoticeList({ notices }: { notices: AdminNotice[] }) {
       {notices.map((item) => (
         <p key={`${item.source}-${item.message}`}>
           <AlertTriangle size={16} />
-          <strong>{item.source}:</strong> {item.message}
+          <strong>Some information could not be loaded:</strong> {item.message}
         </p>
       ))}
     </div>
@@ -183,7 +186,7 @@ export function SyncRows({
             <th>Status</th>
             <th>Attempts</th>
             <th>Updated</th>
-            {!compact ? <th>Payload</th> : null}
+            {!compact ? <th>Details</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -218,13 +221,17 @@ export function SyncRows({
 
 export function ReportRows({
   reports,
+  locations = [],
   compact = false,
+  onPreview,
 }: {
   reports: ReportExport[]
+  locations?: Location[]
   compact?: boolean
+  onPreview?: (report: ReportExport) => void
 }) {
   if (!reports.length) {
-    return <EmptyRows label="No report exports found." />
+    return <EmptyRows label="No documents found." />
   }
 
   return (
@@ -233,6 +240,7 @@ export function ReportRows({
         <thead>
           <tr>
             <th>Report</th>
+            {!compact ? <th>Source</th> : null}
             <th>Format</th>
             <th>Status</th>
             <th>Generated</th>
@@ -246,16 +254,37 @@ export function ReportRows({
                 <strong>{report.report_type}</strong>
                 <small>{report.file_name}</small>
               </td>
+              {!compact ? (
+                <td>{sourceName(locations, report)}</td>
+              ) : null}
               <td>{report.format.toUpperCase()}</td>
               <td>{report.sync_status}</td>
               <td>{formatDate(report.generated_at)}</td>
               {!compact ? (
                 <td>
-                  {report.file_url ? (
-                    <a className="inline-action" href={report.file_url}>
-                      <Download size={16} />
-                      Open
-                    </a>
+                  {report.download_url ? (
+                    <div className="table-actions">
+                      {isPreviewable(report) && onPreview ? (
+                        <button
+                          className="inline-action"
+                          type="button"
+                          onClick={() => onPreview(report)}
+                        >
+                          <Eye size={16} />
+                          Preview
+                        </button>
+                      ) : null}
+                      <a
+                        className="inline-action"
+                        href={report.download_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        download={report.file_name}
+                      >
+                        <Download size={16} />
+                        Download
+                      </a>
+                    </div>
                   ) : (
                     'Local only'
                   )}
@@ -266,6 +295,28 @@ export function ReportRows({
         </tbody>
       </table>
     </div>
+  )
+}
+
+function sourceName(locations: Location[], report: ReportExport) {
+  const location = locations.find((item) => item.id === report.location_id)
+
+  if (location) {
+    return `${location.name} (${location.type})`
+  }
+
+  return report.origin || locationName(locations, report.location_id)
+}
+
+function isPreviewable(report: ReportExport) {
+  const fileName = report.file_name.toLowerCase()
+  const reportType = report.report_type.toLowerCase()
+
+  return (
+    report.format === 'pdf' ||
+    report.format === 'csv' ||
+    reportType.includes('receipt') ||
+    /\.(pdf|png|jpe?g|webp|txt|csv|html?)$/.test(fileName)
   )
 }
 

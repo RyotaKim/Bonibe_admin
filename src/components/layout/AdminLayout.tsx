@@ -17,7 +17,7 @@ export function AdminLayout({ profile }: { profile: Profile }) {
     <div className="app-shell">
       <aside className="sidebar" aria-label="Admin navigation">
         <div className="brand">
-          <img src="/bonibe_logo_primary.png" alt="Bonibe Bakeshop" />
+          <img src="/bonibe_logo.jpg" alt="Bonibe Bakeshop" />
           <div>
             <strong>Bonibe</strong>
             <span>Admin</span>

@@ -2,13 +2,19 @@ import { createIsolatedSupabaseClient, requireSupabase } from './supabase'
 import type {
   AdminNotice,
   AuditLog,
+  BranchLedgerEntry,
   CatalogData,
+  ClientLedgerEntry,
   Company,
   CompositeItem,
+  DamageReturnEntry,
   DashboardData,
   Location,
   LocationsData,
   Product,
+  ProductionAllocation,
+  ProductionReport,
+  ProductionReportLine,
   Profile,
   ReportExport,
   ReportsData,
@@ -18,6 +24,7 @@ import type {
 } from '../types/admin'
 
 const companyId = 'bonibe'
+const reportExportsBucket = 'report-exports'
 
 const validRoles = ['admin', 'branch', 'kitchen'] as const
 
@@ -88,6 +95,46 @@ async function countRows(
 
 function collectNotices(...items: Array<AdminNotice | null>) {
   return items.filter((item): item is AdminNotice => Boolean(item))
+}
+
+function isWebUrl(value: string) {
+  return /^https?:\/\//i.test(value)
+}
+
+function storagePathFrom(value: string | null | undefined) {
+  const path = value?.trim()
+
+  if (!path || isWebUrl(path) || path.startsWith('file:')) {
+    return null
+  }
+
+  return path
+    .replaceAll('\\', '/')
+    .replace(/^\/+/, '')
+    .replace(new RegExp(`^${reportExportsBucket}/`), '')
+}
+
+async function withReportDownloadUrls(reports: ReportExport[]) {
+  const client = requireSupabase()
+
+  return Promise.all(
+    reports.map(async (report) => {
+      const directUrl =
+        report.file_url && isWebUrl(report.file_url) ? report.file_url : null
+      const storagePath =
+        storagePathFrom(report.file_url) ?? storagePathFrom(report.local_path)
+
+      if (directUrl || !storagePath) {
+        return { ...report, download_url: directUrl }
+      }
+
+      const { data } = await client.storage
+        .from(reportExportsBucket)
+        .createSignedUrl(storagePath, 60 * 60)
+
+      return { ...report, download_url: data?.signedUrl ?? null }
+    }),
+  )
 }
 
 export async function getMyProfile(userId: string) {
@@ -281,18 +328,103 @@ export async function fetchSyncReview(): Promise<SyncData> {
 
 export async function fetchReports(): Promise<ReportsData> {
   const client = requireSupabase()
-  const reports = await selectList<ReportExport>(
-    'report_exports',
-    client
-      .from('report_exports')
-      .select('*')
-      .order('generated_at', { ascending: false })
-      .limit(100),
-  )
+  const [
+    reports,
+    locations,
+    companies,
+    products,
+    productionReports,
+    productionLines,
+    productionAllocations,
+    branchLedgerEntries,
+    clientLedgerEntries,
+    damageReturnEntries,
+  ] = await Promise.all([
+    selectList<ReportExport>(
+      'report_exports',
+      client
+        .from('report_exports')
+        .select('*')
+        .order('generated_at', { ascending: false })
+        .limit(100),
+    ),
+    selectList<Location>(
+      'locations',
+      client.from('locations').select('*').order('type').order('name'),
+    ),
+    selectList<Company>(
+      'companies',
+      client.from('companies').select('*').order('company_name'),
+    ),
+    selectList<Product>(
+      'products',
+      client.from('products').select('*').order('category').order('name'),
+    ),
+    selectList<ProductionReport>(
+      'production_reports',
+      client
+        .from('production_reports')
+        .select('*')
+        .order('production_date', { ascending: false })
+        .limit(500),
+    ),
+    selectList<ProductionReportLine>(
+      'production_report_lines',
+      client.from('production_report_lines').select('*').limit(2000),
+    ),
+    selectList<ProductionAllocation>(
+      'production_allocations',
+      client.from('production_allocations').select('*').limit(5000),
+    ),
+    selectList<BranchLedgerEntry>(
+      'branch_ledger_entries',
+      client
+        .from('branch_ledger_entries')
+        .select('*')
+        .order('ledger_date', { ascending: false })
+        .limit(1000),
+    ),
+    selectList<ClientLedgerEntry>(
+      'client_ledger_entries',
+      client
+        .from('client_ledger_entries')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1000),
+    ),
+    selectList<DamageReturnEntry>(
+      'damages_returns',
+      client
+        .from('damages_returns')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1000),
+    ),
+  ])
 
   return {
-    reports: reports.data,
-    notices: collectNotices(reports.notice),
+    reports: await withReportDownloadUrls(reports.data),
+    locations: locations.data,
+    companies: companies.data,
+    products: products.data,
+    productionReports: productionReports.data,
+    productionLines: productionLines.data,
+    productionAllocations: productionAllocations.data,
+    branchLedgerEntries: branchLedgerEntries.data,
+    clientLedgerEntries: clientLedgerEntries.data,
+    damageReturnEntries: damageReturnEntries.data,
+    notices: collectNotices(
+      reports.notice,
+      locations.notice,
+      companies.notice,
+      products.notice,
+      productionReports.notice,
+      productionLines.notice,
+      productionAllocations.notice,
+      branchLedgerEntries.notice,
+      clientLedgerEntries.notice,
+      damageReturnEntries.notice,
+    ),
   }
 }
 
@@ -390,7 +522,7 @@ export async function saveProfile(form: FormData) {
   const staffName = String(form.get('staff_name') || '').trim()
 
   if (!id || !staffName) {
-    throw new Error('Auth user ID and staff name are required.')
+    throw new Error('Account ID and staff name are required.')
   }
 
   const payload = {
@@ -407,6 +539,23 @@ export async function saveProfile(form: FormData) {
   }
 
   const { error } = await client.from('profiles').upsert(payload)
+
+  if (error) {
+    throw error
+  }
+}
+
+export async function requestPasswordReset(email: string) {
+  const client = requireSupabase()
+  const trimmedEmail = email.trim()
+
+  if (!trimmedEmail) {
+    throw new Error('Select an account with an email address first.')
+  }
+
+  const { error } = await client.auth.resetPasswordForEmail(trimmedEmail, {
+    redirectTo: window.location.origin,
+  })
 
   if (error) {
     throw error
@@ -460,7 +609,7 @@ export async function createStaffAccount(form: FormData) {
 
   if (!userId) {
     throw new Error(
-      'Supabase Auth did not return a user ID. Check Auth signup settings.',
+      'The account was started, but no user ID was returned. Please check account sign-up settings.',
     )
   }
 

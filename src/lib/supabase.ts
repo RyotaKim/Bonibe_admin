@@ -18,7 +18,7 @@ export const supabase =
 
 export function requireSupabase() {
   if (!supabase) {
-    throw new Error('Supabase is not configured. Check .env.local.')
+    throw new Error('The admin connection is not configured yet.')
   }
 
   return supabase
@@ -26,7 +26,7 @@ export function requireSupabase() {
 
 export function createIsolatedSupabaseClient() {
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('Supabase is not configured. Check .env.local.')
+    throw new Error('The admin connection is not configured yet.')
   }
 
   return createClient(supabaseUrl, supabaseAnonKey, {
@@ -40,8 +40,8 @@ export function createIsolatedSupabaseClient() {
 
 export function getSupabaseStatus() {
   return supabase
-    ? { configured: true, label: 'Supabase ready' }
-    : { configured: false, label: 'Supabase missing' }
+    ? { configured: true, label: 'Connected' }
+    : { configured: false, label: 'Setup needed' }
 }
 
 export async function getCurrentSession(): Promise<Session | null> {

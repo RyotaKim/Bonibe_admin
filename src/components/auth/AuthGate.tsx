@@ -1,5 +1,11 @@
 import { Loader2, LogOut, ShieldAlert, ShieldCheck } from 'lucide-react'
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react'
 import { getMyProfile } from '../../lib/adminData'
 import {
   getCurrentSession,
@@ -16,6 +22,7 @@ export function AuthGate() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [profileError, setProfileError] = useState<string | null>(null)
   const [profileLoading, setProfileLoading] = useState(false)
+  const sessionUserIdRef = useRef<string | null>(null)
   const status = getSupabaseStatus()
 
   useEffect(() => {
@@ -25,30 +32,51 @@ export function AuthGate() {
 
     let cancelled = false
 
-    getCurrentSession()
+    withTimeout(
+      getCurrentSession(),
+      12000,
+      'We could not finish checking your account. Please refresh and try again.',
+    )
       .then((session) => {
         if (!cancelled) {
-          if (session?.user.id) {
-            setProfileLoading(true)
-          }
-          setSessionUserId(session?.user.id ?? null)
+          const nextUserId = session?.user.id ?? null
+          sessionUserIdRef.current = nextUserId
+          setSessionUserId(nextUserId)
+          setProfileLoading(Boolean(nextUserId))
           setSessionReady(true)
         }
       })
       .catch((error: Error) => {
         if (!cancelled) {
           setProfileError(error.message)
+          setProfileLoading(false)
           setSessionReady(true)
         }
       })
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user.id) {
-        setProfileLoading(true)
+      const nextUserId = session?.user.id ?? null
+
+      setSessionReady(true)
+
+      if (!nextUserId) {
+        sessionUserIdRef.current = null
+        setSessionUserId(null)
+        setProfile(null)
+        setProfileError(null)
+        setProfileLoading(false)
+        return
       }
-      setSessionUserId(session?.user.id ?? null)
+
+      if (sessionUserIdRef.current === nextUserId) {
+        return
+      }
+
+      sessionUserIdRef.current = nextUserId
+      setSessionUserId(nextUserId)
       setProfile(null)
       setProfileError(null)
+      setProfileLoading(true)
     })
 
     return () => {
@@ -64,7 +92,11 @@ export function AuthGate() {
 
     let cancelled = false
 
-    getMyProfile(sessionUserId)
+    withTimeout(
+      getMyProfile(sessionUserId),
+      12000,
+      'We could not load your admin account details. Please refresh and try again.',
+    )
       .then((nextProfile) => {
         if (!cancelled) {
           setProfile(nextProfile)
@@ -91,8 +123,8 @@ export function AuthGate() {
       <AuthFrame>
         <MessageState
           icon={ShieldAlert}
-          title="Supabase is not configured"
-          body="Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.local, then restart the Vite server."
+          title="Connection setup needed"
+          body="The admin website is missing its connection settings. Please ask the setup team to finish the website configuration."
         />
       </AuthFrame>
     )
@@ -103,9 +135,29 @@ export function AuthGate() {
       <AuthFrame>
         <MessageState
           icon={Loader2}
-          title="Loading admin session"
-          body="Checking Supabase Auth and the linked profile role."
+          title="Loading admin access"
+          body="Checking your account and permissions."
         />
+      </AuthFrame>
+    )
+  }
+
+  if (profileError) {
+    return (
+      <AuthFrame>
+        <MessageState
+          icon={ShieldAlert}
+          title="Account lookup failed"
+          body={profileError}
+        />
+        <button
+          className="primary-action retry-action"
+          type="button"
+          onClick={() => window.location.reload()}
+        >
+          Try Again
+        </button>
+        <SignOutButton />
       </AuthFrame>
     )
   }
@@ -114,26 +166,13 @@ export function AuthGate() {
     return <LoginScreen />
   }
 
-  if (profileError) {
-    return (
-      <AuthFrame>
-        <MessageState
-          icon={ShieldAlert}
-          title="Profile lookup failed"
-          body={profileError}
-        />
-        <SignOutButton />
-      </AuthFrame>
-    )
-  }
-
   if (!profile || profile.role !== 'admin') {
     return (
       <AuthFrame>
         <MessageState
           icon={ShieldAlert}
           title="Admin access required"
-          body="This website only allows profiles with role admin. Create or update the matching profiles row in Supabase before continuing."
+          body="This website is only for owner and admin accounts. Please sign in with an admin account."
         />
         <SignOutButton />
       </AuthFrame>
@@ -141,6 +180,19 @@ export function AuthGate() {
   }
 
   return <AdminLayout profile={profile} />
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(message))
+    }, timeoutMs)
+
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => window.clearTimeout(timer))
+  })
 }
 
 function LoginScreen() {
@@ -169,11 +221,11 @@ function LoginScreen() {
   return (
     <AuthFrame>
       <form className="auth-card" onSubmit={onSubmit}>
-        <img src="/bonibe_logo_primary.png" alt="Bonibe Bakeshop" />
+        <img src="/bonibe_logo.jpg" alt="Bonibe Bakeshop" />
         <div>
           <span className="eyebrow">Admin sign in</span>
           <h1>Bonibe Admin</h1>
-          <p>Use a Supabase Auth account linked to an admin profile.</p>
+          <p>Sign in with your Bonibe owner or admin account.</p>
         </div>
         <label className="field">
           <span>Email</span>

@@ -102,6 +102,107 @@ export type ReportExport = {
   origin: string
   sync_status: SyncStatus
   created_at: string
+  download_url?: string | null
+}
+
+export type ProductionReport = {
+  id: string
+  company_id: string
+  location_id: string | null
+  production_date: string
+  status: string
+  notes: string | null
+  sync_status: SyncStatus
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ProductionReportLine = {
+  id: string
+  production_report_id: string
+  product_id: string
+  plates: number
+  pieces_per_plate: number
+  expected_pieces: number
+  actual_pieces: number
+  damages: number
+  returns: number
+  unknown_loss: number
+  balance: number
+  status: string
+  reason: string | null
+  notes: string | null
+  created_at: string
+}
+
+export type ProductionAllocation = {
+  id: string
+  production_report_line_id: string
+  destination_location_id: string | null
+  quantity: number
+  created_at: string
+}
+
+export type BranchLedgerEntry = {
+  id: string
+  company_id: string
+  branch_location_id: string
+  ledger_date: string
+  shift_label: string | null
+  bread_sales: number
+  softdrinks: number
+  batchoy: number
+  short_order: number
+  cr: number
+  acr: number
+  ncr: number
+  discount: number
+  expenses: number
+  returns: number
+  end_inventory_value: number
+  excess_deficit: number
+  remarks: string | null
+  sync_status: SyncStatus
+  created_by: string | null
+  created_at: string
+}
+
+export type ClientLedgerEntry = {
+  id: string
+  company_id: string
+  client_location_id: string
+  product_id: string | null
+  sent_quantity: number
+  sold_quantity: number
+  return_quantity: number
+  damaged_quantity: number
+  amount: number
+  payment: number
+  balance: number
+  net_payable: number
+  status: string
+  notes: string | null
+  sync_status: SyncStatus
+  created_by: string | null
+  created_at: string
+}
+
+export type DamageReturnEntry = {
+  id: string
+  company_id: string
+  location_id: string | null
+  product_id: string
+  entry_type: 'damage' | 'loss' | 'return'
+  quantity: number
+  unit_value: number
+  total_value: number
+  reason: string
+  notes: string | null
+  reconciled: boolean
+  sync_status: SyncStatus
+  created_by: string | null
+  created_at: string
 }
 
 export type AuditLog = {
@@ -155,6 +256,15 @@ export type StaffData = {
 
 export type ReportsData = {
   reports: ReportExport[]
+  locations: Location[]
+  companies: Company[]
+  products: Product[]
+  productionReports: ProductionReport[]
+  productionLines: ProductionReportLine[]
+  productionAllocations: ProductionAllocation[]
+  branchLedgerEntries: BranchLedgerEntry[]
+  clientLedgerEntries: ClientLedgerEntry[]
+  damageReturnEntries: DamageReturnEntry[]
   notices: AdminNotice[]
 }
 

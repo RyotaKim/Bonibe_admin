@@ -88,22 +88,23 @@ export function SettingsPage() {
                 </form>
               </Panel>
 
-              <Panel title="Supabase Guardrails" icon={ShieldCheck}>
+              <Panel title="Owner Reminders" icon={ShieldCheck}>
                 <ul className="scope-list">
                   <li>
-                    Browser code uses only the Supabase anon key and
-                    authenticated RLS.
+                    Keep at least one owner or admin account active at all
+                    times.
                   </li>
                   <li>
-                    Admin accounts must have a `profiles.role` value of `admin`.
+                    New staff can sign in after their account details and access
+                    role are saved.
                   </li>
                   <li>
-                    Profile creation needs an existing Auth user ID or a
-                    server-side admin function.
+                    Password reset emails use the email address saved on the
+                    account.
                   </li>
                   <li>
-                    Some writes may require the SQL policies in
-                    `supabase/admin_access_policies.sql`.
+                    Branch and kitchen downloads appear here after the device
+                    has synced its records.
                   </li>
                 </ul>
               </Panel>

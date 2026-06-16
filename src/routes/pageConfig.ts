@@ -39,17 +39,17 @@ export const pages: PageConfig[] = [
     eyebrow: 'Owner console',
     title: 'Bonibe operations at a glance',
     summary:
-      'Review production, branch sales, reconciliation, reports, and sync health from Supabase.',
+      'Review production, branch sales, reconciliation, reports, and device sync health.',
   },
   {
     key: 'accounts',
     path: '/accounts',
     label: 'Accounts',
     icon: UserPlus,
-    eyebrow: 'Account creation',
-    title: 'Create admin, kitchen, and branch accounts',
+    eyebrow: 'Account management',
+    title: 'Create and manage staff accounts',
     summary:
-      'Create Supabase Auth users and matching Bonibe staff profiles from one admin workflow.',
+      'Create admin, kitchen, and branch accounts, edit access, and send password reset emails.',
   },
   {
     key: 'staff',
@@ -59,7 +59,7 @@ export const pages: PageConfig[] = [
     eyebrow: 'Provisioning',
     title: 'Staff accounts and role assignment',
     summary:
-      'Manage profile rows for Supabase Auth users and assign Kitchen, Branch, or Admin access.',
+      'Manage staff details and assign Kitchen, Branch, or Admin access.',
   },
   {
     key: 'catalog',
@@ -99,17 +99,17 @@ export const pages: PageConfig[] = [
     eyebrow: 'Exports',
     title: 'Central reports and document exports',
     summary:
-      'Find generated report exports, filter by type or status, and open stored files.',
+      'Find generated receipts, files, and reports by branch or kitchen, then preview or download them.',
   },
   {
     key: 'settings',
     path: '/settings',
     label: 'Settings',
     icon: SlidersHorizontal,
-    eyebrow: 'System',
+    eyebrow: 'Setup',
     title: 'Admin app configuration',
     summary:
-      'Confirm Supabase setup, RLS expectations, and the database policies needed by admin workflows.',
+      'Manage company header details and owner-facing account reminders.',
   },
 ]
 

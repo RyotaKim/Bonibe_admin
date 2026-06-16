@@ -66,8 +66,50 @@ on production_report_lines for select
 to authenticated
 using (current_profile_role() = 'admin');
 
+drop policy if exists "admin can read production reports" on production_reports;
+create policy "admin can read production reports"
+on production_reports for select
+to authenticated
+using (current_profile_role() = 'admin');
+
+drop policy if exists "admin can read production allocations" on production_allocations;
+create policy "admin can read production allocations"
+on production_allocations for select
+to authenticated
+using (current_profile_role() = 'admin');
+
 drop policy if exists "admin can read sales lines" on sales_lines;
 create policy "admin can read sales lines"
 on sales_lines for select
+to authenticated
+using (current_profile_role() = 'admin');
+
+drop policy if exists "admin can read sales entries" on sales_entries;
+create policy "admin can read sales entries"
+on sales_entries for select
+to authenticated
+using (current_profile_role() = 'admin');
+
+drop policy if exists "admin can read branch ledger entries" on branch_ledger_entries;
+create policy "admin can read branch ledger entries"
+on branch_ledger_entries for select
+to authenticated
+using (current_profile_role() = 'admin');
+
+drop policy if exists "admin can read client ledger entries" on client_ledger_entries;
+create policy "admin can read client ledger entries"
+on client_ledger_entries for select
+to authenticated
+using (current_profile_role() = 'admin');
+
+drop policy if exists "admin can read damages returns" on damages_returns;
+create policy "admin can read damages returns"
+on damages_returns for select
+to authenticated
+using (current_profile_role() = 'admin');
+
+drop policy if exists "admin can read expenses" on expenses;
+create policy "admin can read expenses"
+on expenses for select
 to authenticated
 using (current_profile_role() = 'admin');

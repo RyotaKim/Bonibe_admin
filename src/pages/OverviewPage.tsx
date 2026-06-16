@@ -1,5 +1,13 @@
 import { ClipboardCheck, FileDown } from 'lucide-react'
-import { Panel, Metric, NoticeList, QueryState, RefreshButton, ReportRows, SyncRows } from '../components/ui/AdminUi'
+import {
+  Metric,
+  NoticeList,
+  Panel,
+  QueryState,
+  RefreshButton,
+  ReportRows,
+  SyncRows,
+} from '../components/ui/AdminUi'
 import { PageShell } from '../components/layout/PageShell'
 import { useAdminQuery } from '../hooks/useAdminQuery'
 import { fetchDashboard } from '../lib/adminData'
@@ -18,7 +26,7 @@ export function OverviewPage() {
           <>
             <NoticeList notices={data.notices} />
             <section className="metric-grid" aria-label="Operational metrics">
-              <Metric label="Staff profiles" value={data.counts.staff} />
+              <Metric label="Staff accounts" value={data.counts.staff} />
               <Metric
                 label="Active products"
                 value={data.counts.activeProducts}
