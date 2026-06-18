@@ -1,4 +1,4 @@
-import { requireSupabase } from './supabase'
+import { createIsolatedSupabaseClient, requireSupabase } from './supabase'
 import type {
   AdminNotice,
   AuditLog,
@@ -542,6 +542,8 @@ export async function saveProfile(form: FormData) {
   const id = String(form.get('id') || '').trim()
   const staffName = String(form.get('staff_name') || '').trim()
   const role = String(form.get('role') || 'branch').trim()
+  const newPassword = String(form.get('new_password') || '').trim()
+  const confirmPassword = String(form.get('confirm_new_password') || '').trim()
   const assignedLocationId =
     String(form.get('assigned_location_id') || '').trim() || null
 
@@ -554,6 +556,16 @@ export async function saveProfile(form: FormData) {
   }
 
   const appRole = role as ValidRole
+
+  if (newPassword || confirmPassword) {
+    if (newPassword.length < 4) {
+      throw new Error('New password must be at least 4 characters.')
+    }
+
+    if (newPassword !== confirmPassword) {
+      throw new Error('New password and re-entered password must match.')
+    }
+  }
 
   const payload = {
     id,
@@ -591,12 +603,27 @@ export async function saveProfile(form: FormData) {
       throw createMutationError('Could not update assigned location', locationError)
     }
   }
+
+  if (newPassword) {
+    const { error: passwordError } = await client.rpc(
+      'update_staff_profile_password',
+      {
+        p_profile_id: id,
+        p_password: newPassword,
+      },
+    )
+
+    if (passwordError) {
+      throw createMutationError('Could not update account password', passwordError)
+    }
+  }
 }
 
 export async function createStaffAccount(form: FormData) {
   const client = requireSupabase()
   const email = String(form.get('email') || '').trim()
   const password = String(form.get('password') || '').trim()
+  const confirmPassword = String(form.get('confirm_password') || '').trim()
   const staffName = String(form.get('staff_name') || '').trim()
   const employeeCode = String(form.get('employee_code') || '').trim()
   const role = String(form.get('role') || 'branch').trim()
@@ -614,11 +641,73 @@ export async function createStaffAccount(form: FormData) {
     throw new Error('Password must be at least 4 characters.')
   }
 
+  if (password !== confirmPassword) {
+    throw new Error('Password and re-entered password must match.')
+  }
+
   if (!validRoles.includes(role as (typeof validRoles)[number])) {
     throw new Error('Role must be admin, branch, or kitchen.')
   }
 
   const appRole = role as ValidRole
+
+  if (appRole === 'admin') {
+    const authClient = createIsolatedSupabaseClient()
+    const { data: authData, error: authError } = await authClient.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          staff_name: staffName,
+          employee_code: employeeCode || null,
+          role: appRole,
+        },
+      },
+    })
+
+    if (authError) {
+      throw createMutationError('Could not create admin auth account', authError)
+    }
+
+    const userId = authData.user?.id
+
+    if (!userId) {
+      throw new Error(
+        'The admin auth account was started, but no user ID was returned.',
+      )
+    }
+
+    const { error: profileError } = await client.from('profiles').upsert({
+      id: userId,
+      company_id: company,
+      staff_name: staffName,
+      employee_code: employeeCode || null,
+      email,
+      password_hash: null,
+      role: appRole,
+      assigned_location_id: null,
+      active: true,
+      updated_at: new Date().toISOString(),
+    })
+
+    if (profileError) {
+      throw createMutationError('Could not create admin profile', profileError)
+    }
+
+    const { error: passwordError } = await client.rpc(
+      'update_staff_profile_password',
+      {
+        p_profile_id: userId,
+        p_password: password,
+      },
+    )
+
+    if (passwordError) {
+      throw createMutationError('Could not confirm admin password', passwordError)
+    }
+
+    return { userId, email, role: appRole }
+  }
 
   const { data, error } = await client.rpc('create_staff_profile_with_location', {
     p_company_id: company,
@@ -640,4 +729,75 @@ export async function createStaffAccount(form: FormData) {
   }
 
   return data
+}
+
+export async function deleteProfile(profileId: string) {
+  const client = requireSupabase()
+  const id = profileId.trim()
+
+  if (!id) {
+    throw new Error('Select an account to delete.')
+  }
+
+  const { data: authData } = await client.auth.getUser()
+  if (authData.user?.id === id) {
+    throw new Error('You cannot delete the admin account you are signed in with.')
+  }
+
+  const { data: profile, error: profileError } = await client
+    .from('profiles')
+    .select('id, role, assigned_location_id')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (profileError) {
+    throw createMutationError(
+      'Could not load account before deleting',
+      profileError,
+    )
+  }
+
+  if (!profile) {
+    throw new Error('This account was already deleted or could not be found.')
+  }
+
+  const locationId =
+    ownsLocation(profile.role as ValidRole) && profile.assigned_location_id
+      ? profile.assigned_location_id
+      : null
+
+  const { count: sharedLocationCount, error: countError } = locationId
+    ? await client
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('assigned_location_id', locationId)
+        .neq('id', id)
+    : { count: 0, error: null }
+
+  if (countError) {
+    throw createMutationError(
+      'Could not check account workspace ownership',
+      countError,
+    )
+  }
+
+  const { error } = await client.from('profiles').delete().eq('id', id)
+
+  if (error) {
+    throw createMutationError('Could not delete account profile', error)
+  }
+
+  if (locationId && (sharedLocationCount ?? 0) === 0) {
+    const { error: locationDeleteError } = await client
+      .from('locations')
+      .delete()
+      .eq('id', locationId)
+
+    if (locationDeleteError) {
+      await client
+        .from('locations')
+        .update({ active: false, updated_at: new Date().toISOString() })
+        .eq('id', locationId)
+    }
+  }
 }

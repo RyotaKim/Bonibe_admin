@@ -285,3 +285,62 @@ $$;
 
 revoke all on function public.verify_staff_profile_password(text, text) from public;
 grant execute on function public.verify_staff_profile_password(text, text) to anon, authenticated;
+
+create or replace function public.update_staff_profile_password(
+  p_profile_id uuid,
+  p_password text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_password text := trim(coalesce(p_password, ''));
+  v_profile record;
+begin
+  if current_profile_role() <> 'admin' then
+    raise exception 'Only admin accounts can update staff passwords.'
+      using errcode = '42501';
+  end if;
+
+  if length(v_password) < 4 then
+    raise exception 'Password must be at least 4 characters.';
+  end if;
+
+  select id, role
+  into v_profile
+  from public.profiles
+  where id = p_profile_id;
+
+  if not found then
+    raise exception 'Account profile was not found.';
+  end if;
+
+  update public.profiles
+  set
+    password_hash = crypt(v_password, gen_salt('bf')),
+    updated_at = now()
+  where id = p_profile_id;
+
+  if v_profile.role = 'admin' then
+    update auth.users
+    set
+      encrypted_password = crypt(v_password, gen_salt('bf')),
+      email_confirmed_at = coalesce(email_confirmed_at, now()),
+      confirmation_token = '',
+      recovery_token = '',
+      updated_at = now()
+    where id = p_profile_id;
+  end if;
+
+  return jsonb_build_object(
+    'userId', p_profile_id,
+    'role', v_profile.role,
+    'passwordUpdated', true
+  );
+end
+$$;
+
+revoke all on function public.update_staff_profile_password(uuid, text) from public;
+grant execute on function public.update_staff_profile_password(uuid, text) to authenticated;

@@ -212,7 +212,11 @@ function LoginScreen() {
     })
 
     if (signInError) {
-      setError(signInError.message)
+      setError(
+        signInError.message === 'Invalid login credentials'
+          ? 'Invalid login credentials. If this admin was created before the latest account fix, delete and recreate it so it gets a Supabase Auth login.'
+          : signInError.message,
+      )
     }
 
     setSubmitting(false)

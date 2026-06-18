@@ -1,7 +1,11 @@
 import {
+  AlertTriangle,
+  Eye,
+  EyeOff,
   Pencil,
   Save,
   ShieldCheck,
+  Trash2,
   UserPlus,
   UsersRound,
 } from 'lucide-react'
@@ -22,10 +26,11 @@ import { useAdminQuery } from '../hooks/useAdminQuery'
 import { runMutation, useMutationStatus } from '../hooks/useMutationStatus'
 import {
   createStaffAccount,
+  deleteProfile,
   fetchStaff,
   saveProfile,
 } from '../lib/adminData'
-import type { AppRole, StaffData } from '../types/admin'
+import type { AppRole, Profile, StaffData } from '../types/admin'
 import { formatDate } from '../utils/format'
 import { locationName } from '../utils/relations'
 
@@ -65,14 +70,64 @@ function assignedLocationLabel(role: AppRole) {
   return 'Assigned location'
 }
 
+function PasswordField({
+  label,
+  name,
+  visible,
+  onToggle,
+  required = false,
+  defaultValue,
+  placeholder,
+}: {
+  label: string
+  name: string
+  visible: boolean
+  onToggle: () => void
+  required?: boolean
+  defaultValue?: string
+  placeholder?: string
+}) {
+  const Icon = visible ? EyeOff : Eye
+
+  return (
+    <label className="field password-field">
+      <span>{label}</span>
+      <input
+        name={name}
+        type={visible ? 'text' : 'password'}
+        required={required}
+        defaultValue={defaultValue}
+        placeholder={placeholder}
+      />
+      <button
+        className="password-toggle"
+        type="button"
+        onClick={onToggle}
+        aria-label={visible ? `Hide ${label}` : `Show ${label}`}
+      >
+        <Icon size={18} />
+      </button>
+    </label>
+  )
+}
+
 export function AccountsPage() {
   const query = useAdminQuery(fetchStaff)
   const [role, setRole] = useState<AppRole>('branch')
   const [editRole, setEditRole] = useState<AppRole>('branch')
   const [search, setSearch] = useState('')
   const [selectedProfileId, setSelectedProfileId] = useState('')
+  const [profilePendingDelete, setProfilePendingDelete] =
+    useState<Profile | null>(null)
+  const [createPasswordVisible, setCreatePasswordVisible] = useState(false)
+  const [createConfirmPasswordVisible, setCreateConfirmPasswordVisible] =
+    useState(false)
+  const [managePasswordVisible, setManagePasswordVisible] = useState(false)
+  const [manageConfirmPasswordVisible, setManageConfirmPasswordVisible] =
+    useState(false)
   const [createStatus, setCreateStatus] = useMutationStatus()
   const [manageStatus, setManageStatus] = useMutationStatus()
+  const [deleteStatus, setDeleteStatus] = useMutationStatus()
   const locations = query.data?.locations ?? []
   const filtered = useMemo(() => {
     const profiles = query.data?.profiles ?? []
@@ -129,6 +184,28 @@ export function AccountsPage() {
     }
   }
 
+  async function confirmDeleteProfile() {
+    if (!profilePendingDelete) {
+      return
+    }
+
+    const deleted = await runMutation(
+      setDeleteStatus,
+      () => deleteProfile(profilePendingDelete.id),
+      'Account deleted successfully.',
+    )
+
+    if (!deleted) {
+      return
+    }
+
+    if (selectedProfileId === profilePendingDelete.id) {
+      setSelectedProfileId('')
+    }
+    setProfilePendingDelete(null)
+    query.reload()
+  }
+
   return (
     <PageShell
       pageKey="accounts"
@@ -138,6 +215,7 @@ export function AccountsPage() {
         {(data: StaffData) => (
           <>
             <NoticeList notices={data.notices} />
+            <MutationNotice status={deleteStatus} />
             <section className="content-grid">
               <Panel title="Create Account" icon={UserPlus}>
                 <p className="panel-note">
@@ -160,12 +238,25 @@ export function AccountsPage() {
                     required
                     placeholder="staff@example.com"
                   />
-                  <Field
+                  <PasswordField
                     label="Password"
                     name="password"
-                    type="password"
                     required
                     defaultValue="Bonibe1234"
+                    visible={createPasswordVisible}
+                    onToggle={() =>
+                      setCreatePasswordVisible((visible) => !visible)
+                    }
+                  />
+                  <PasswordField
+                    label="Re-enter password"
+                    name="confirm_password"
+                    required
+                    defaultValue="Bonibe1234"
+                    visible={createConfirmPasswordVisible}
+                    onToggle={() =>
+                      setCreateConfirmPasswordVisible((visible) => !visible)
+                    }
                   />
                   <Field
                     label="Employee code"
@@ -194,9 +285,8 @@ export function AccountsPage() {
               <Panel title="Creation Rules" icon={ShieldCheck}>
                 <ul className="scope-list">
                   <li>
-                    Admin profiles are saved here for records and access
-                    management. Owner website sign-in still uses the existing
-                    Supabase admin login.
+                    Admin accounts are created for this admin website and use
+                    Supabase Auth sign-in.
                   </li>
                   <li>
                     Branch accounts create a new branch location from the
@@ -207,8 +297,8 @@ export function AccountsPage() {
                     kitchen name and are assigned to it automatically.
                   </li>
                   <li>
-                    Passwords are saved as hashes for app login. No Supabase
-                    Auth verification or password reset email is sent.
+                    Kitchen and branch passwords are saved as hashes for app
+                    login. Admin passwords are saved by Supabase Auth.
                   </li>
                 </ul>
               </Panel>
@@ -260,6 +350,14 @@ export function AccountsPage() {
                               >
                                 <Pencil size={16} />
                                 Edit
+                              </button>
+                              <button
+                                className="inline-action danger"
+                                type="button"
+                                onClick={() => setProfilePendingDelete(profile)}
+                              >
+                                <Trash2 size={16} />
+                                Delete
                               </button>
                             </div>
                           </td>
@@ -363,10 +461,36 @@ export function AccountsPage() {
                       name="active"
                       defaultChecked={selectedProfile.active}
                     />
+                    <PasswordField
+                      label="New password"
+                      name="new_password"
+                      placeholder="Leave blank to keep current password"
+                      visible={managePasswordVisible}
+                      onToggle={() =>
+                        setManagePasswordVisible((visible) => !visible)
+                      }
+                    />
+                    <PasswordField
+                      label="Re-enter new password"
+                      name="confirm_new_password"
+                      placeholder="Re-enter new password"
+                      visible={manageConfirmPasswordVisible}
+                      onToggle={() =>
+                        setManageConfirmPasswordVisible((visible) => !visible)
+                      }
+                    />
                     <div className="button-row">
                       <button className="primary-action" type="submit">
                         <Save size={18} />
                         Save Changes
+                      </button>
+                      <button
+                        className="danger-action"
+                        type="button"
+                        onClick={() => setProfilePendingDelete(selectedProfile)}
+                      >
+                        <Trash2 size={18} />
+                        Delete Account
                       </button>
                     </div>
                   </form>
@@ -377,6 +501,46 @@ export function AccountsPage() {
                 )}
               </Panel>
             </section>
+            {profilePendingDelete ? (
+              <div
+                className="confirm-overlay"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="delete-account-title"
+              >
+                <div className="confirm-panel">
+                  <div className="confirm-icon">
+                    <AlertTriangle size={24} />
+                  </div>
+                  <div>
+                    <h2 id="delete-account-title">Delete Account?</h2>
+                    <p>
+                      Are you sure about deleting{' '}
+                      <strong>{profilePendingDelete.staff_name}</strong>? This
+                      removes the account profile and its unused workspace
+                      location.
+                    </p>
+                  </div>
+                  <div className="confirm-actions">
+                    <button
+                      className="inline-action"
+                      type="button"
+                      onClick={() => setProfilePendingDelete(null)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="danger-action"
+                      type="button"
+                      onClick={confirmDeleteProfile}
+                    >
+                      <Trash2 size={18} />
+                      Delete Account
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </>
         )}
       </QueryState>

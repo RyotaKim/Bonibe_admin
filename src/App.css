@@ -244,6 +244,22 @@
   cursor: pointer;
 }
 
+.danger-action {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #b83b21;
+  border-radius: 8px;
+  padding: 0 16px;
+  background: #b83b21;
+  color: #ffffff;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .primary-action:disabled {
   cursor: wait;
   opacity: 0.7;
@@ -260,6 +276,11 @@
   color: var(--green);
   cursor: pointer;
   text-decoration: none;
+}
+
+.inline-action.danger {
+  border-color: #efc9bc;
+  color: #b83b21;
 }
 
 .page {
@@ -535,6 +556,33 @@
   color: var(--text-strong);
 }
 
+.password-field {
+  position: relative;
+}
+
+.password-field input {
+  padding-right: 44px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 8px;
+  bottom: 5px;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--green);
+  cursor: pointer;
+}
+
+.password-toggle:hover {
+  background: var(--green-soft);
+}
+
 .toggle-row {
   min-height: 42px;
   display: flex;
@@ -646,6 +694,55 @@
   background: #ffffff;
 }
 
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(23, 34, 27, 0.54);
+}
+
+.confirm-panel {
+  width: min(460px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 20px 70px rgba(23, 34, 27, 0.24);
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+}
+
+.confirm-icon {
+  width: 48px;
+  height: 48px;
+  border: 1px solid #efc9bc;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: #fff1ed;
+  color: #b83b21;
+}
+
+.confirm-panel h2 {
+  color: var(--text-strong);
+  font-size: 22px;
+  margin: 0 0 8px;
+}
+
+.confirm-panel p {
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 @media (max-width: 1000px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -712,9 +809,14 @@
   }
 
   .primary-action,
+  .danger-action,
   .profile-pill,
   .status-pill {
     width: 100%;
+  }
+
+  .confirm-actions {
+    flex-direction: column-reverse;
   }
 
   .activity-row {
