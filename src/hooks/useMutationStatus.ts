@@ -1,4 +1,5 @@
 import { useState, type Dispatch, type SetStateAction } from 'react'
+import { formatError } from '../utils/errors'
 
 export type MutationStatus = {
   state: 'idle' | 'success' | 'error'
@@ -19,10 +20,12 @@ export async function runMutation(
   try {
     await mutation()
     setStatus({ state: 'success', message: successMessage })
+    return true
   } catch (error) {
     setStatus({
       state: 'error',
-      message: error instanceof Error ? error.message : String(error),
+      message: formatError(error),
     })
+    return false
   }
 }

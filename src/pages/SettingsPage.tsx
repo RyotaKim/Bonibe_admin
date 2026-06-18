@@ -95,12 +95,12 @@ export function SettingsPage() {
                     times.
                   </li>
                   <li>
-                    New staff can sign in after their account details and access
-                    role are saved.
+                    New staff profiles are available after their account details
+                    and access role are saved.
                   </li>
                   <li>
-                    Password reset emails use the email address saved on the
-                    account.
+                    Account emails are stored for contact and identification;
+                    this admin page does not send verification emails.
                   </li>
                   <li>
                     Branch and kitchen downloads appear here after the device

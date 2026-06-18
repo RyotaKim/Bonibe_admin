@@ -1,4 +1,4 @@
-import { createIsolatedSupabaseClient, requireSupabase } from './supabase'
+import { requireSupabase } from './supabase'
 import type {
   AdminNotice,
   AuditLog,
@@ -22,11 +22,13 @@ import type {
   SyncData,
   SyncQueueItem,
 } from '../types/admin'
+import { createMutationError, formatError } from '../utils/errors'
 
 const companyId = 'bonibe'
 const reportExportsBucket = 'report-exports'
 
 const validRoles = ['admin', 'branch', 'kitchen'] as const
+type ValidRole = (typeof validRoles)[number]
 
 type ResultList<T> = {
   data: T[]
@@ -43,7 +45,7 @@ function notice(source: string, message: string): AdminNotice {
 }
 
 function messageFrom(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
+  return formatError(error)
 }
 
 async function selectList<T>(
@@ -99,6 +101,25 @@ function collectNotices(...items: Array<AdminNotice | null>) {
 
 function isWebUrl(value: string) {
   return /^https?:\/\//i.test(value)
+}
+
+function ownsLocation(role: ValidRole) {
+  return role === 'branch' || role === 'kitchen'
+}
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+function isMissingRpc(error: unknown) {
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+
+  const item = error as { code?: unknown; message?: unknown }
+  const message = typeof item.message === 'string' ? item.message : ''
+
+  return item.code === 'PGRST202' || message.includes('schema cache')
 }
 
 function storagePathFrom(value: string | null | undefined) {
@@ -520,10 +541,19 @@ export async function saveProfile(form: FormData) {
   const client = requireSupabase()
   const id = String(form.get('id') || '').trim()
   const staffName = String(form.get('staff_name') || '').trim()
+  const role = String(form.get('role') || 'branch').trim()
+  const assignedLocationId =
+    String(form.get('assigned_location_id') || '').trim() || null
 
   if (!id || !staffName) {
     throw new Error('Account ID and staff name are required.')
   }
+
+  if (!validRoles.includes(role as (typeof validRoles)[number])) {
+    throw new Error('Role must be admin, branch, or kitchen.')
+  }
+
+  const appRole = role as ValidRole
 
   const payload = {
     id,
@@ -531,9 +561,8 @@ export async function saveProfile(form: FormData) {
     staff_name: staffName,
     employee_code: String(form.get('employee_code') || '').trim() || null,
     email: String(form.get('email') || '').trim() || null,
-    role: String(form.get('role') || 'branch').trim(),
-    assigned_location_id:
-      String(form.get('assigned_location_id') || '').trim() || null,
+    role: appRole,
+    assigned_location_id: ownsLocation(appRole) ? assignedLocationId : null,
     active: form.get('active') === 'on',
     updated_at: new Date().toISOString(),
   }
@@ -541,93 +570,74 @@ export async function saveProfile(form: FormData) {
   const { error } = await client.from('profiles').upsert(payload)
 
   if (error) {
-    throw error
-  }
-}
-
-export async function requestPasswordReset(email: string) {
-  const client = requireSupabase()
-  const trimmedEmail = email.trim()
-
-  if (!trimmedEmail) {
-    throw new Error('Select an account with an email address first.')
+    throw createMutationError('Could not save account profile', error)
   }
 
-  const { error } = await client.auth.resetPasswordForEmail(trimmedEmail, {
-    redirectTo: window.location.origin,
-  })
+  if (
+    form.get('sync_location_name') === 'on' &&
+    ownsLocation(appRole) &&
+    assignedLocationId
+  ) {
+    const { error: locationError } = await client
+      .from('locations')
+      .update({
+        name: staffName,
+        type: appRole,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', assignedLocationId)
 
-  if (error) {
-    throw error
+    if (locationError) {
+      throw createMutationError('Could not update assigned location', locationError)
+    }
   }
 }
 
 export async function createStaffAccount(form: FormData) {
   const client = requireSupabase()
-  const authClient = createIsolatedSupabaseClient()
   const email = String(form.get('email') || '').trim()
   const password = String(form.get('password') || '').trim()
   const staffName = String(form.get('staff_name') || '').trim()
   const employeeCode = String(form.get('employee_code') || '').trim()
   const role = String(form.get('role') || 'branch').trim()
-  const assignedLocationId =
-    String(form.get('assigned_location_id') || '').trim() || null
+  const company = String(form.get('company_id') || companyId).trim()
 
   if (!email || !password || !staffName) {
-    throw new Error('Email, password, and staff name are required.')
+    throw new Error('Email, password, and account name are required.')
   }
 
-  if (password.length < 6) {
-    throw new Error('Password must be at least 6 characters.')
+  if (!isValidEmail(email)) {
+    throw new Error('Enter a valid email address.')
+  }
+
+  if (password.length < 4) {
+    throw new Error('Password must be at least 4 characters.')
   }
 
   if (!validRoles.includes(role as (typeof validRoles)[number])) {
     throw new Error('Role must be admin, branch, or kitchen.')
   }
 
-  if (role === 'branch' && !assignedLocationId) {
-    throw new Error('Branch accounts require an assigned location.')
-  }
+  const appRole = role as ValidRole
 
-  const { data: authData, error: authError } = await authClient.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        staff_name: staffName,
-        employee_code: employeeCode || null,
-        role,
-      },
-    },
+  const { data, error } = await client.rpc('create_staff_profile_with_location', {
+    p_company_id: company,
+    p_email: email,
+    p_employee_code: employeeCode || null,
+    p_password: password,
+    p_role: appRole,
+    p_staff_name: staffName,
   })
 
-  if (authError) {
-    throw authError
+  if (error) {
+    if (isMissingRpc(error)) {
+      throw new Error(
+        'Database setup needed: run supabase/profile_only_account_creation.sql in the Supabase SQL Editor, then try creating the account again.',
+      )
+    }
+
+    throw createMutationError('Could not create account profile', error)
   }
 
-  const userId = authData.user?.id
-
-  if (!userId) {
-    throw new Error(
-      'The account was started, but no user ID was returned. Please check account sign-up settings.',
-    )
-  }
-
-  const { error: profileError } = await client.from('profiles').upsert({
-    id: userId,
-    company_id: String(form.get('company_id') || companyId).trim(),
-    staff_name: staffName,
-    employee_code: employeeCode || null,
-    email,
-    role,
-    assigned_location_id: role === 'branch' ? assignedLocationId : null,
-    active: true,
-    updated_at: new Date().toISOString(),
-  })
-
-  if (profileError) {
-    throw profileError
-  }
-
-  return { userId, email, role }
+  return data
 }

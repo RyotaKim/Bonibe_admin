@@ -24,20 +24,6 @@ export function requireSupabase() {
   return supabase
 }
 
-export function createIsolatedSupabaseClient() {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('The admin connection is not configured yet.')
-  }
-
-  return createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-  })
-}
-
 export function getSupabaseStatus() {
   return supabase
     ? { configured: true, label: 'Connected' }

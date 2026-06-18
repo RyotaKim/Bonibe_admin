@@ -38,7 +38,15 @@ After applying the base Bonibe schema, run this file in the Supabase SQL Editor 
 supabase/admin_access_policies.sql
 ```
 
-This enables admin-profile users to manage profiles, companies, locations, products, bundles, and audit visibility through normal authenticated RLS. Supabase Auth user creation still needs the Supabase dashboard or a server-side admin API because service-role keys must never run in browser code.
+This enables admin-profile users to manage profiles, companies, locations, products, bundles, and audit visibility through normal authenticated RLS.
+
+For profile-only staff creation without Supabase Auth verification emails, also run:
+
+```text
+supabase/profile_only_account_creation.sql
+```
+
+This installs the admin-only `create_staff_profile_with_location` database function used by the Accounts page.
 
 ## Admin scope
 

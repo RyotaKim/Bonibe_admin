@@ -49,7 +49,7 @@ export const pages: PageConfig[] = [
     eyebrow: 'Account management',
     title: 'Create and manage staff accounts',
     summary:
-      'Create admin, kitchen, and branch accounts, edit access, and send password reset emails.',
+      'Create admin, kitchen, and branch profiles, edit access, and manage workspace assignments.',
   },
   {
     key: 'staff',

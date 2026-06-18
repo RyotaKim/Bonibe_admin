@@ -1,8 +1,6 @@
 import {
-  KeyRound,
   Pencil,
   Save,
-  Send,
   ShieldCheck,
   UserPlus,
   UsersRound,
@@ -25,12 +23,47 @@ import { runMutation, useMutationStatus } from '../hooks/useMutationStatus'
 import {
   createStaffAccount,
   fetchStaff,
-  requestPasswordReset,
   saveProfile,
 } from '../lib/adminData'
 import type { AppRole, StaffData } from '../types/admin'
 import { formatDate } from '../utils/format'
 import { locationName } from '../utils/relations'
+
+function accountNameLabel(role: AppRole) {
+  if (role === 'branch') {
+    return 'Branch name'
+  }
+
+  if (role === 'kitchen') {
+    return 'Kitchen name'
+  }
+
+  return 'Staff name'
+}
+
+function accountNamePlaceholder(role: AppRole) {
+  if (role === 'branch') {
+    return 'Bonibe Branch'
+  }
+
+  if (role === 'kitchen') {
+    return 'Bonibe Kitchen'
+  }
+
+  return 'Bonibe Admin'
+}
+
+function assignedLocationLabel(role: AppRole) {
+  if (role === 'branch') {
+    return 'Assigned branch location'
+  }
+
+  if (role === 'kitchen') {
+    return 'Assigned kitchen location'
+  }
+
+  return 'Assigned location'
+}
 
 export function AccountsPage() {
   const query = useAdminQuery(fetchStaff)
@@ -40,7 +73,6 @@ export function AccountsPage() {
   const [selectedProfileId, setSelectedProfileId] = useState('')
   const [createStatus, setCreateStatus] = useMutationStatus()
   const [manageStatus, setManageStatus] = useMutationStatus()
-  const [resetStatus, setResetStatus] = useMutationStatus()
   const locations = query.data?.locations ?? []
   const filtered = useMemo(() => {
     const profiles = query.data?.profiles ?? []
@@ -61,9 +93,14 @@ export function AccountsPage() {
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    await runMutation(setCreateStatus, () =>
+    const saved = await runMutation(setCreateStatus, () =>
       createStaffAccount(new FormData(event.currentTarget)),
     )
+
+    if (!saved) {
+      return
+    }
+
     event.currentTarget.reset()
     setRole('branch')
     query.reload()
@@ -71,18 +108,15 @@ export function AccountsPage() {
 
   async function onManageSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    await runMutation(setManageStatus, () =>
+    const saved = await runMutation(setManageStatus, () =>
       saveProfile(new FormData(event.currentTarget)),
     )
-    query.reload()
-  }
 
-  async function onResetPassword(email: string | null) {
-    await runMutation(
-      setResetStatus,
-      () => requestPasswordReset(email ?? ''),
-      'Password reset email sent.',
-    )
+    if (!saved) {
+      return
+    }
+
+    query.reload()
   }
 
   function selectProfile(profileId: string) {
@@ -107,16 +141,17 @@ export function AccountsPage() {
             <section className="content-grid">
               <Panel title="Create Account" icon={UserPlus}>
                 <p className="panel-note">
-                  Create a staff sign-in account and choose the correct access
-                  for an admin, kitchen, or branch user.
+                  Create an admin, kitchen, or branch profile with a valid
+                  email. Kitchen and branch profiles automatically get their
+                  own workspace location.
                 </p>
                 <MutationNotice status={createStatus} />
                 <form className="form-grid" onSubmit={onSubmit}>
                   <Field
-                    label="Staff name"
+                    label={accountNameLabel(role)}
                     name="staff_name"
                     required
-                    placeholder="Bonibe Admin"
+                    placeholder={accountNamePlaceholder(role)}
                   />
                   <Field
                     label="Email"
@@ -126,7 +161,7 @@ export function AccountsPage() {
                     placeholder="staff@example.com"
                   />
                   <Field
-                    label="Temporary password"
+                    label="Password"
                     name="password"
                     type="password"
                     required
@@ -149,24 +184,6 @@ export function AccountsPage() {
                       <option value="branch">branch</option>
                     </select>
                   </label>
-                  <label className="field">
-                    <span>Assigned branch location</span>
-                    <select
-                      name="assigned_location_id"
-                      disabled={role !== 'branch'}
-                      required={role === 'branch'}
-                      defaultValue=""
-                    >
-                      <option value="">Select branch</option>
-                      {locations
-                        .filter((location) => location.type === 'branch')
-                        .map((location) => (
-                          <option key={location.id} value={location.id}>
-                            {location.name}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
                   <button className="primary-action" type="submit">
                     <Save size={18} />
                     Create Account
@@ -177,19 +194,21 @@ export function AccountsPage() {
               <Panel title="Creation Rules" icon={ShieldCheck}>
                 <ul className="scope-list">
                   <li>
-                    Admin accounts can access this owner website after the
-                    account details are saved.
+                    Admin profiles are saved here for records and access
+                    management. Owner website sign-in still uses the existing
+                    Supabase admin login.
                   </li>
                   <li>
-                    Branch accounts need an assigned branch so their work opens
-                    in the right location.
+                    Branch accounts create a new branch location from the
+                    branch name and are assigned to it automatically.
                   </li>
                   <li>
-                    Kitchen accounts do not need a branch location and use the
-                    Kitchen workspace in the operations app.
+                    Kitchen accounts create a new kitchen location from the
+                    kitchen name and are assigned to it automatically.
                   </li>
                   <li>
-                    Password reset emails are sent to the account email address.
+                    Passwords are saved as hashes for app login. No Supabase
+                    Auth verification or password reset email is sent.
                   </li>
                 </ul>
               </Panel>
@@ -242,14 +261,6 @@ export function AccountsPage() {
                                 <Pencil size={16} />
                                 Edit
                               </button>
-                              <button
-                                className="inline-action"
-                                type="button"
-                                onClick={() => void onResetPassword(profile.email)}
-                              >
-                                <KeyRound size={16} />
-                                Reset
-                              </button>
                             </div>
                           </td>
                         </tr>
@@ -261,7 +272,6 @@ export function AccountsPage() {
 
               <Panel title="Manage Account" icon={ShieldCheck}>
                 <MutationNotice status={manageStatus} />
-                <MutationNotice status={resetStatus} />
                 <label className="field">
                   <span>Select account</span>
                   <select
@@ -286,7 +296,7 @@ export function AccountsPage() {
                   >
                     <input type="hidden" name="id" value={selectedProfile.id} />
                     <Field
-                      label="Staff name"
+                      label={accountNameLabel(editRole)}
                       name="staff_name"
                       required
                       defaultValue={selectedProfile.staff_name}
@@ -316,24 +326,38 @@ export function AccountsPage() {
                         <option value="branch">branch</option>
                       </select>
                     </label>
-                    <label className="field">
-                      <span>Assigned location</span>
-                      <select
-                        name="assigned_location_id"
-                        disabled={editRole !== 'branch'}
-                        required={editRole === 'branch'}
-                        defaultValue={selectedProfile.assigned_location_id ?? ''}
-                      >
-                        <option value="">None</option>
-                        {locations
-                          .filter((location) => location.type === 'branch')
-                          .map((location) => (
-                            <option key={location.id} value={location.id}>
-                              {location.name}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
+                    {editRole === 'admin' ? null : (
+                      <label className="field">
+                        <span>{assignedLocationLabel(editRole)}</span>
+                        <input
+                          type="hidden"
+                          name="sync_location_name"
+                          value="on"
+                        />
+                        <select
+                          name="assigned_location_id"
+                          required
+                          defaultValue={
+                            locations.find(
+                              (location) =>
+                                location.id ===
+                                selectedProfile.assigned_location_id,
+                            )?.type === editRole
+                              ? selectedProfile.assigned_location_id ?? ''
+                              : ''
+                          }
+                        >
+                          <option value="">Select {editRole}</option>
+                          {locations
+                            .filter((location) => location.type === editRole)
+                            .map((location) => (
+                              <option key={location.id} value={location.id}>
+                                {location.name}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                    )}
                     <Toggle
                       label="Active"
                       name="active"
@@ -344,31 +368,15 @@ export function AccountsPage() {
                         <Save size={18} />
                         Save Changes
                       </button>
-                      <button
-                        className="inline-action"
-                        type="button"
-                        onClick={() => void onResetPassword(selectedProfile.email)}
-                      >
-                        <Send size={16} />
-                        Send Reset Email
-                      </button>
                     </div>
                   </form>
                 ) : (
                   <p className="empty-state">
-                    Select an account to edit details or send a password reset.
+                    Select an account to edit details.
                   </p>
                 )}
               </Panel>
             </section>
-
-            <Panel title="Password Handling" icon={KeyRound}>
-              <p className="panel-note">
-                `Bonibe1234` is provided as a simple temporary password for new
-                accounts. For existing accounts, use reset email so staff can
-                securely choose a new password.
-              </p>
-            </Panel>
           </>
         )}
       </QueryState>
