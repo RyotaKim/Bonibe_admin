@@ -1,5 +1,5 @@
 import { Building2, Pencil, Save, Store } from 'lucide-react'
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { PageShell } from '../components/layout/PageShell'
 import {
   Field,
@@ -42,17 +42,12 @@ export function LocationsPage() {
     )
   }, [query.data])
 
+  const effectiveSelectedLocationId =
+    selectedLocationId || workspaceLocations[0]?.id || ''
+
   const selectedLocation =
-    workspaceLocations.find((location) => location.id === selectedLocationId) ??
+    workspaceLocations.find((location) => location.id === effectiveSelectedLocationId) ??
     null
-
-  useEffect(() => {
-    if (selectedLocationId && selectedLocation) {
-      return
-    }
-
-    setSelectedLocationId(workspaceLocations[0]?.id ?? '')
-  }, [selectedLocation, selectedLocationId, workspaceLocations])
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
