@@ -3,13 +3,5 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "vite",
-  "outputDirectory": "dist",
-  "env": {
-    "VITE_SUPABASE_URL": {
-      "required": true
-    },
-    "VITE_SUPABASE_ANON_KEY": {
-      "required": true
-    }
-  }
+  "outputDirectory": "dist"
 }
