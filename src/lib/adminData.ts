@@ -80,7 +80,10 @@ async function selectMaybeOne<T>(
 
 async function countRows(
   source: string,
-  query: PromiseLike<{ count: number | null; error: { message: string } | null }>,
+  query: PromiseLike<{
+    count: number | null
+    error: { message: string } | null
+  }>,
 ): Promise<CountResult> {
   try {
     const { count, error } = await query
@@ -302,7 +305,7 @@ export async function fetchCatalog(): Promise<CatalogData> {
 export async function fetchLocations(): Promise<LocationsData> {
   const client = requireSupabase()
 
-  const [companies, locations] = await Promise.all([
+  const [companies, locations, profiles] = await Promise.all([
     selectList<Company>(
       'companies',
       client.from('companies').select('*').order('company_name'),
@@ -311,12 +314,21 @@ export async function fetchLocations(): Promise<LocationsData> {
       'locations',
       client.from('locations').select('*').order('type').order('name'),
     ),
+    selectList<Profile>(
+      'profiles',
+      client.from('profiles').select('*').order('staff_name'),
+    ),
   ])
 
   return {
     companies: companies.data,
     locations: locations.data,
-    notices: collectNotices(companies.notice, locations.notice),
+    profiles: profiles.data,
+    notices: collectNotices(
+      companies.notice,
+      locations.notice,
+      profiles.notice,
+    ),
   }
 }
 
@@ -451,11 +463,12 @@ export async function fetchReports(): Promise<ReportsData> {
 
 export async function saveProduct(form: FormData) {
   const client = requireSupabase()
-  const id = String(form.get('id') || '').trim()
   const name = String(form.get('name') || '').trim()
+  const id =
+    String(form.get('id') || '').trim() || (await nextProductIdFromName(name))
 
   if (!id || !name) {
-    throw new Error('Product ID and name are required.')
+    throw new Error('Product name is required.')
   }
 
   const payload = {
@@ -474,17 +487,78 @@ export async function saveProduct(form: FormData) {
   const { error } = await client.from('products').upsert(payload)
 
   if (error) {
-    throw error
+    throw createMutationError('Could not save product', error)
   }
+}
+
+export async function deleteProduct(productId: string) {
+  const client = requireSupabase()
+  const id = productId.trim()
+
+  if (!id) {
+    throw new Error('Select a product to delete.')
+  }
+
+  const { error } = await client.from('products').delete().eq('id', id)
+
+  if (error) {
+    throw createMutationError('Could not delete product', error)
+  }
+}
+
+async function nextProductIdFromName(name: string) {
+  const client = requireSupabase()
+  const slug = slugFromName(name)
+
+  if (!slug) {
+    return ''
+  }
+
+  const { data, error } = await client
+    .from('products')
+    .select('id')
+    .or(`id.eq.${slug},id.like.${slug}_%`)
+
+  if (error) {
+    throw createMutationError('Could not prepare product ID', error)
+  }
+
+  const existingIds = new Set((data ?? []).map((product) => product.id))
+
+  if (!existingIds.has(slug)) {
+    return slug
+  }
+
+  for (let suffix = 2; suffix < 1000; suffix += 1) {
+    const candidate = `${slug}_${suffix}`
+    if (!existingIds.has(candidate)) {
+      return candidate
+    }
+  }
+
+  return `${slug}_${Date.now()}`
+}
+
+function slugFromName(name: string) {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
 }
 
 export async function saveLocation(form: FormData) {
   const client = requireSupabase()
   const id = String(form.get('id') || '').trim()
   const name = String(form.get('name') || '').trim()
+  const type = String(form.get('type') || 'branch').trim()
 
   if (!id || !name) {
     throw new Error('Location ID and name are required.')
+  }
+
+  if (type !== 'kitchen' && type !== 'branch') {
+    throw new Error('Location type must be kitchen or branch.')
   }
 
   const payload = {
@@ -492,7 +566,7 @@ export async function saveLocation(form: FormData) {
     company_id: String(form.get('company_id') || companyId).trim(),
     name,
     code: String(form.get('code') || id).trim(),
-    type: String(form.get('type') || 'branch').trim(),
+    type,
     address: String(form.get('address') || '').trim() || null,
     contact_person: String(form.get('contact_person') || '').trim() || null,
     active: form.get('active') === 'on',
@@ -600,7 +674,10 @@ export async function saveProfile(form: FormData) {
       .eq('id', assignedLocationId)
 
     if (locationError) {
-      throw createMutationError('Could not update assigned location', locationError)
+      throw createMutationError(
+        'Could not update assigned location',
+        locationError,
+      )
     }
   }
 
@@ -614,7 +691,10 @@ export async function saveProfile(form: FormData) {
     )
 
     if (passwordError) {
-      throw createMutationError('Could not update account password', passwordError)
+      throw createMutationError(
+        'Could not update account password',
+        passwordError,
+      )
     }
   }
 }
@@ -666,7 +746,10 @@ export async function createStaffAccount(form: FormData) {
     })
 
     if (authError) {
-      throw createMutationError('Could not create admin auth account', authError)
+      throw createMutationError(
+        'Could not create admin auth account',
+        authError,
+      )
     }
 
     const userId = authData.user?.id
@@ -703,20 +786,26 @@ export async function createStaffAccount(form: FormData) {
     )
 
     if (passwordError) {
-      throw createMutationError('Could not confirm admin password', passwordError)
+      throw createMutationError(
+        'Could not confirm admin password',
+        passwordError,
+      )
     }
 
     return { userId, email, role: appRole }
   }
 
-  const { data, error } = await client.rpc('create_staff_profile_with_location', {
-    p_company_id: company,
-    p_email: email,
-    p_employee_code: employeeCode || null,
-    p_password: password,
-    p_role: appRole,
-    p_staff_name: staffName,
-  })
+  const { data, error } = await client.rpc(
+    'create_staff_profile_with_location',
+    {
+      p_company_id: company,
+      p_email: email,
+      p_employee_code: employeeCode || null,
+      p_password: password,
+      p_role: appRole,
+      p_staff_name: staffName,
+    },
+  )
 
   if (error) {
     if (isMissingRpc(error)) {
@@ -741,7 +830,9 @@ export async function deleteProfile(profileId: string) {
 
   const { data: authData } = await client.auth.getUser()
   if (authData.user?.id === id) {
-    throw new Error('You cannot delete the admin account you are signed in with.')
+    throw new Error(
+      'You cannot delete the admin account you are signed in with.',
+    )
   }
 
   const { data: profile, error: profileError } = await client

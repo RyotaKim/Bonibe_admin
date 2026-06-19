@@ -1,4 +1,12 @@
-import { Boxes, PackageCheck, Save } from 'lucide-react'
+import {
+  AlertTriangle,
+  Boxes,
+  PackageCheck,
+  Pencil,
+  Plus,
+  Save,
+  Trash2,
+} from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { PageShell } from '../components/layout/PageShell'
 import {
@@ -13,13 +21,19 @@ import {
 } from '../components/ui/AdminUi'
 import { useAdminQuery } from '../hooks/useAdminQuery'
 import { runMutation, useMutationStatus } from '../hooks/useMutationStatus'
-import { fetchCatalog, saveProduct } from '../lib/adminData'
-import type { CatalogData } from '../types/admin'
+import { deleteProduct, fetchCatalog, saveProduct } from '../lib/adminData'
+import type { CatalogData, Product } from '../types/admin'
 import { formatDate, formatMoney } from '../utils/format'
+
+type EditorMode = 'add' | 'edit'
 
 export function CatalogPage() {
   const query = useAdminQuery(fetchCatalog)
   const [search, setSearch] = useState('')
+  const [mode, setMode] = useState<EditorMode>('add')
+  const [selectedProductId, setSelectedProductId] = useState('')
+  const [productPendingDelete, setProductPendingDelete] =
+    useState<Product | null>(null)
   const [status, setStatus] = useMutationStatus()
   const filtered = useMemo(() => {
     const products = query.data?.products ?? []
@@ -31,12 +45,61 @@ export function CatalogPage() {
         .includes(search.toLowerCase()),
     )
   }, [query.data?.products, search])
+  const selectedProduct = useMemo(
+    () =>
+      query.data?.products.find(
+        (product) => product.id === selectedProductId,
+      ) ?? null,
+    [query.data?.products, selectedProductId],
+  )
+
+  function selectProduct(productId: string) {
+    setSelectedProductId(productId)
+    setMode(productId ? 'edit' : 'add')
+  }
+
+  function startAddProduct() {
+    setMode('add')
+    setSelectedProductId('')
+  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    await runMutation(setStatus, () =>
+    const saved = await runMutation(setStatus, () =>
       saveProduct(new FormData(event.currentTarget)),
     )
+
+    if (!saved) {
+      return
+    }
+
+    if (mode === 'add') {
+      event.currentTarget.reset()
+    }
+
+    query.reload()
+  }
+
+  async function confirmDeleteProduct() {
+    if (!productPendingDelete) {
+      return
+    }
+
+    const deleted = await runMutation(
+      setStatus,
+      () => deleteProduct(productPendingDelete.id),
+      'Product deleted successfully.',
+    )
+
+    if (!deleted) {
+      return
+    }
+
+    if (selectedProductId === productPendingDelete.id) {
+      startAddProduct()
+    }
+
+    setProductPendingDelete(null)
     query.reload()
   }
 
@@ -61,6 +124,7 @@ export function CatalogPage() {
                         <th>Price</th>
                         <th>Plate</th>
                         <th>Status</th>
+                        <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -74,6 +138,16 @@ export function CatalogPage() {
                           <td>{formatMoney(product.unit_price)}</td>
                           <td>{product.pieces_per_plate} pcs</td>
                           <td>{product.active ? 'Active' : 'Inactive'}</td>
+                          <td>
+                            <button
+                              className="inline-action"
+                              type="button"
+                              onClick={() => selectProduct(product.id)}
+                            >
+                              <Pencil size={16} />
+                              Edit
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -83,53 +157,101 @@ export function CatalogPage() {
 
               <Panel title="Product Editor" icon={Boxes}>
                 <MutationNotice status={status} />
-                <form className="form-grid" onSubmit={onSubmit}>
-                  <Field
-                    label="Product ID"
+                <div className="form-grid">
+                  <label className="field">
+                    <span>Select product</span>
+                    <select
+                      value={mode === 'edit' ? selectedProductId : ''}
+                      onChange={(event) => selectProduct(event.target.value)}
+                    >
+                      <option value="">Add new product</option>
+                      {data.products.map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    className="inline-action"
+                    type="button"
+                    onClick={startAddProduct}
+                  >
+                    <Plus size={16} />
+                    Add Product
+                  </button>
+                </div>
+                <form
+                  className="form-grid"
+                  key={`${mode}-${selectedProduct?.id ?? 'new'}`}
+                  onSubmit={onSubmit}
+                >
+                  <input
+                    type="hidden"
                     name="id"
-                    required
-                    placeholder="pandesal"
+                    value={mode === 'edit' ? (selectedProduct?.id ?? '') : ''}
                   />
                   <Field
                     label="Name"
                     name="name"
                     required
-                    placeholder="Pandesal"
+                    defaultValue={selectedProduct?.name ?? ''}
+                    placeholder="Product name"
                   />
                   <Field
                     label="Category"
                     name="category"
-                    defaultValue="Bread"
+                    defaultValue={selectedProduct?.category ?? 'Bread'}
                   />
                   <Field
                     label="Unit price"
                     name="unit_price"
                     type="number"
                     step="0.01"
-                    defaultValue="0"
+                    defaultValue={String(selectedProduct?.unit_price ?? 0)}
                   />
                   <Field
                     label="Pieces per plate"
                     name="pieces_per_plate"
                     type="number"
-                    defaultValue="1"
+                    defaultValue={String(
+                      selectedProduct?.pieces_per_plate ?? 1,
+                    )}
                   />
                   <Field
                     label="Low stock threshold"
                     name="low_stock_threshold"
                     type="number"
-                    defaultValue="0"
+                    defaultValue={String(
+                      selectedProduct?.low_stock_threshold ?? 0,
+                    )}
                   />
                   <Toggle
                     label="Bundle eligible"
                     name="bundle_eligible"
-                    defaultChecked
+                    defaultChecked={selectedProduct?.bundle_eligible ?? true}
                   />
-                  <Toggle label="Active" name="active" defaultChecked />
-                  <button className="primary-action" type="submit">
-                    <Save size={18} />
-                    Save Product
-                  </button>
+                  <Toggle
+                    label="Active"
+                    name="active"
+                    defaultChecked={selectedProduct?.active ?? true}
+                  />
+                  <div className="confirm-actions">
+                    <button className="primary-action" type="submit">
+                      <Save size={18} />
+                      {mode === 'edit' ? 'Save Product' : 'Create Product'}
+                    </button>
+                    {selectedProduct ? (
+                      <button
+                        className="danger-action"
+                        type="button"
+                        onClick={() => setProductPendingDelete(selectedProduct)}
+                      >
+                        <Trash2 size={18} />
+                        Delete Product
+                      </button>
+                    ) : null}
+                  </div>
                 </form>
               </Panel>
             </section>
@@ -161,6 +283,46 @@ export function CatalogPage() {
                 </table>
               </div>
             </Panel>
+            {productPendingDelete ? (
+              <div
+                className="confirm-overlay"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="delete-product-title"
+              >
+                <div className="confirm-panel">
+                  <div className="confirm-icon">
+                    <AlertTriangle size={24} />
+                  </div>
+                  <div>
+                    <h2 id="delete-product-title">Delete Product?</h2>
+                    <p>
+                      Are you sure about deleting{' '}
+                      <strong>{productPendingDelete.name}</strong>? Products
+                      with synced production or sales records may be blocked by
+                      the database.
+                    </p>
+                  </div>
+                  <div className="confirm-actions">
+                    <button
+                      className="inline-action"
+                      type="button"
+                      onClick={() => setProductPendingDelete(null)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="danger-action"
+                      type="button"
+                      onClick={confirmDeleteProduct}
+                    >
+                      <Trash2 size={18} />
+                      Delete Product
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </>
         )}
       </QueryState>

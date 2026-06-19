@@ -254,9 +254,7 @@ export function ReportRows({
                 <strong>{report.report_type}</strong>
                 <small>{report.file_name}</small>
               </td>
-              {!compact ? (
-                <td>{sourceName(locations, report)}</td>
-              ) : null}
+              {!compact ? <td>{sourceName(locations, report)}</td> : null}
               <td>{report.format.toUpperCase()}</td>
               <td>{report.sync_status}</td>
               <td>{formatDate(report.generated_at)}</td>
@@ -365,6 +363,7 @@ export function Field({
   defaultValue,
   placeholder,
   step,
+  readOnly = false,
 }: {
   label: string
   name: string
@@ -373,6 +372,7 @@ export function Field({
   defaultValue?: string
   placeholder?: string
   step?: string
+  readOnly?: boolean
 }) {
   return (
     <label className="field">
@@ -384,6 +384,7 @@ export function Field({
         defaultValue={defaultValue}
         placeholder={placeholder}
         step={step}
+        readOnly={readOnly}
       />
     </label>
   )

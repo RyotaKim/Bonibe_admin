@@ -36,6 +36,20 @@ to authenticated
 using (current_profile_role() = 'admin')
 with check (current_profile_role() = 'admin');
 
+drop policy if exists "admin can manage companies" on companies;
+create policy "admin can manage companies"
+on companies for all
+to authenticated
+using (current_profile_role() = 'admin')
+with check (current_profile_role() = 'admin');
+
+drop policy if exists "admin can manage products" on products;
+create policy "admin can manage products"
+on products for all
+to authenticated
+using (current_profile_role() = 'admin')
+with check (current_profile_role() = 'admin');
+
 do $$
 declare
   constraint_record record;
@@ -251,6 +265,7 @@ begin
     profiles.staff_name,
     profiles.employee_code,
     profiles.email,
+    profiles.company_id,
     profiles.role,
     profiles.assigned_location_id,
     locations.name as location_name
@@ -276,9 +291,27 @@ begin
     'staff_name', v_profile.staff_name,
     'employee_code', v_profile.employee_code,
     'email', v_profile.email,
+    'company_id', v_profile.company_id,
     'role', v_profile.role,
     'assigned_location_id', v_profile.assigned_location_id,
-    'location_name', v_profile.location_name
+    'location_name', v_profile.location_name,
+    'locations', coalesce(
+      (
+        select jsonb_agg(
+          jsonb_build_object(
+            'id', branch_locations.id,
+            'name', branch_locations.name,
+            'type', branch_locations.type
+          )
+          order by branch_locations.name
+        )
+        from public.locations branch_locations
+        where branch_locations.company_id = v_profile.company_id
+          and branch_locations.active = true
+          and branch_locations.type = 'branch'
+      ),
+      '[]'::jsonb
+    )
   );
 end
 $$;

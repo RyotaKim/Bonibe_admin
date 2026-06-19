@@ -245,6 +245,7 @@ export type CatalogData = {
 export type LocationsData = {
   companies: Company[]
   locations: Location[]
+  profiles: Profile[]
   notices: AdminNotice[]
 }
 
