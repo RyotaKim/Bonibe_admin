@@ -1,22 +1,18 @@
 import {
-  ClipboardCheck,
   FileDown,
   Gauge,
   PackageCheck,
   SlidersHorizontal,
   Store,
   UserPlus,
-  UsersRound,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 
 export type PageKey =
   | 'overview'
   | 'accounts'
-  | 'staff'
   | 'catalog'
   | 'locations'
-  | 'sync'
   | 'reports'
   | 'settings'
 
@@ -52,16 +48,6 @@ export const pages: PageConfig[] = [
       'Create admin, kitchen, and branch profiles, edit access, and manage workspace assignments.',
   },
   {
-    key: 'staff',
-    path: '/staff',
-    label: 'Staff',
-    icon: UsersRound,
-    eyebrow: 'Provisioning',
-    title: 'Staff accounts and role assignment',
-    summary:
-      'Manage staff details and assign Kitchen, Branch, or Admin access.',
-  },
-  {
     key: 'catalog',
     path: '/catalog',
     label: 'Catalog',
@@ -82,24 +68,14 @@ export const pages: PageConfig[] = [
       'Manage active locations and company report header details used across Bonibe documents.',
   },
   {
-    key: 'sync',
-    path: '/sync',
-    label: 'Sync Review',
-    icon: ClipboardCheck,
-    eyebrow: 'Audit queue',
-    title: 'Queued writes and failed sync review',
-    summary:
-      'Inspect retryable queue items, failures, payloads, attempts, and related audit events.',
-  },
-  {
     key: 'reports',
     path: '/reports',
     label: 'Reports',
     icon: FileDown,
-    eyebrow: 'Exports',
-    title: 'Central reports and document exports',
+    eyebrow: 'Production exports',
+    title: 'Daily production reports',
     summary:
-      'Find generated receipts, files, and reports by branch or kitchen, then preview or download them.',
+      'Generate branch-specific daily production reports or one whole-Bonibe Excel summary.',
   },
   {
     key: 'settings',

@@ -11,6 +11,8 @@ import type {
 } from '../types/admin'
 
 export type GeneratedReportKind =
+  | 'branch-daily-production'
+  | 'bonibe-daily-production-summary'
   | 'branch-daily-summary'
   | 'branch-weekly-summary'
   | 'client-daily-summary'
@@ -24,6 +26,7 @@ export type GenerateReportRequest = {
   kind: GeneratedReportKind
   format: GeneratedReportFormat
   locationId: string
+  productId?: string
   dateFrom: string
   dateTo: string
 }
@@ -40,6 +43,11 @@ export const generatedReportKinds: Array<{
   value: GeneratedReportKind
   label: string
 }> = [
+  { value: 'branch-daily-production', label: 'Branch Daily Production' },
+  {
+    value: 'bonibe-daily-production-summary',
+    label: 'Whole Bonibe Daily Production Summary',
+  },
   { value: 'branch-daily-summary', label: 'Branch Daily Summary' },
   { value: 'branch-weekly-summary', label: 'Branch Weekly Summary' },
   { value: 'client-daily-summary', label: 'Client Daily Summary' },
@@ -118,6 +126,9 @@ async function addToZip(
 
 function reportTable(data: ReportsData, request: GenerateReportRequest): ReportTable {
   return {
+    'branch-daily-production': () => branchProductionTable(data, request),
+    'bonibe-daily-production-summary': () =>
+      bonibeProductionSummaryTable(data, request),
     'branch-daily-summary': () => branchSummaryTable(data, request, 'Daily'),
     'branch-weekly-summary': () => branchSummaryTable(data, request, 'Weekly'),
     'client-daily-summary': () => clientSummaryTable(data, request, 'Daily'),
@@ -125,6 +136,155 @@ function reportTable(data: ReportsData, request: GenerateReportRequest): ReportT
     'production-report': () => productionTable(data, request),
     'damages-losses': () => damagesTable(data, request),
   }[request.kind]()
+}
+
+function branchProductionTable(
+  data: ReportsData,
+  request: GenerateReportRequest,
+): ReportTable {
+  const branches = data.locations
+    .filter((location) => location.type === 'branch')
+    .filter((location) => locationMatches(location.id, request.locationId))
+  const reports = productionReportsForRequest(data, request)
+  const reportIds = new Set(reports.map((report) => report.id))
+  const lines = data.productionLines
+    .filter((line) => reportIds.has(line.production_report_id))
+    .filter((line) => productMatches(line.product_id, request))
+  const branchRows = lines
+    .flatMap((line) => {
+      const report = reports.find((item) => item.id === line.production_report_id)
+
+      return branches
+        .map((branch) => {
+          const allocated = int(
+            sum(
+              data.productionAllocations.filter(
+                (allocation) =>
+                  allocation.production_report_line_id === line.id &&
+                  allocation.destination_location_id === branch.id,
+              ),
+              (allocation) => allocation.quantity,
+            ),
+          )
+
+          if (allocated <= 0) {
+            return null
+          }
+
+          return {
+            date: dateOnly(report?.production_date),
+            branch: branch.name,
+            product: productName(data.products, line.product_id),
+            plates: line.plates,
+            piecesPerPlate: line.pieces_per_plate,
+            expected: line.expected_pieces,
+            actual: line.actual_pieces,
+            allocated,
+            damages: line.damages,
+            returns: line.returns,
+            unknownLoss: line.unknown_loss,
+            balance: line.balance,
+            status: line.status,
+            notes: line.notes ?? line.reason ?? '',
+            price: productPrice(data.products, line.product_id),
+          }
+        })
+        .filter((row): row is NonNullable<typeof row> => Boolean(row))
+    })
+    .sort((a, b) =>
+      [a.date, a.branch, a.product].join('|').localeCompare(
+        [b.date, b.branch, b.product].join('|'),
+      ),
+    )
+
+  const singleBranch = request.locationId !== 'all'
+
+  return {
+    title: 'Branch Daily Production Report',
+    subtitle: subtitle(data, request),
+    headers: [
+      'Date',
+      'Branch',
+      'Product',
+      'Price',
+      'Plates',
+      'Pieces/Plate',
+      'Expected',
+      'Actual',
+      'Allocated to Branch',
+      'Damages',
+      'Returns',
+      'Unknown Loss',
+      'Balance',
+      'Status',
+      'Notes',
+    ],
+    rows: branchRows.map((row) => [
+      row.date,
+      row.branch,
+      row.product,
+      money(row.price),
+      row.plates,
+      row.piecesPerPlate,
+      row.expected,
+      row.actual,
+      row.allocated,
+      row.damages,
+      row.returns,
+      row.unknownLoss,
+      row.balance,
+      row.status,
+      row.notes,
+    ]),
+    totals: singleBranch
+      ? [
+          'TOTAL',
+          '',
+          '',
+          '',
+          int(sum(branchRows, (row) => row.plates)),
+          '',
+          int(sum(branchRows, (row) => row.expected)),
+          int(sum(branchRows, (row) => row.actual)),
+          int(sum(branchRows, (row) => row.allocated)),
+          int(sum(branchRows, (row) => row.damages)),
+          int(sum(branchRows, (row) => row.returns)),
+          int(sum(branchRows, (row) => row.unknownLoss)),
+          int(sum(branchRows, (row) => row.balance)),
+          '',
+          '',
+        ]
+      : [
+          'TOTAL',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          int(sum(branchRows, (row) => row.allocated)),
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+        ],
+  }
+}
+
+function bonibeProductionSummaryTable(
+  data: ReportsData,
+  request: GenerateReportRequest,
+): ReportTable {
+  const table = productionTable(data, request)
+
+  return {
+    ...table,
+    title: 'Whole Bonibe Daily Production Summary',
+    subtitle: subtitle(data, request),
+  }
 }
 
 function branchSummaryTable(
@@ -234,13 +394,11 @@ function productionTable(
   const locations = data.locations.filter((location) =>
     ['branch', 'client'].includes(location.type),
   )
-  const reports = data.productionReports
-    .filter((report) => dateWithin(report.production_date, request))
-    .sort((a, b) => a.production_date.localeCompare(b.production_date))
+  const reports = productionReportsForRequest(data, request)
   const reportIds = new Set(reports.map((report) => report.id))
-  const lines = data.productionLines.filter((line) =>
-    reportIds.has(line.production_report_id),
-  )
+  const lines = data.productionLines
+    .filter((line) => reportIds.has(line.production_report_id))
+    .filter((line) => productMatches(line.product_id, request))
 
   const headers = [
     'Date',
@@ -256,6 +414,7 @@ function productionTable(
     'Unknown Loss',
     'Balance',
     'Status',
+    'Notes',
   ]
 
   return {
@@ -288,6 +447,7 @@ function productionTable(
       int(sum(lines, (line) => line.returns)),
       int(sum(lines, (line) => line.unknown_loss)),
       int(sum(lines, (line) => line.balance)),
+      '',
       '',
     ],
   }
@@ -405,6 +565,7 @@ function productionRow(
     line.unknown_loss,
     line.balance,
     line.status,
+    line.notes ?? line.reason ?? '',
   ]
 }
 
@@ -590,11 +751,23 @@ function subtitle(data: ReportsData, request: GenerateReportRequest) {
   const location = request.locationId === 'all'
     ? allLocationLabel(request.kind)
     : locationName(data.locations, request.locationId)
+  const product =
+    request.productId && request.productId !== 'all'
+      ? ` | ${productName(data.products, request.productId)}`
+      : ''
+  const date =
+    request.dateFrom === request.dateTo
+      ? request.dateFrom
+      : `${request.dateFrom} to ${request.dateTo}`
 
-  return `${location} | ${request.dateFrom} to ${request.dateTo}`
+  return `${location} | ${date}${product}`
 }
 
 function allLocationLabel(kind: GeneratedReportKind) {
+  if (kind === 'bonibe-daily-production-summary') {
+    return 'Whole Bonibe'
+  }
+
   if (kind.startsWith('branch')) {
     return 'All branches'
   }
@@ -620,6 +793,19 @@ function productPrice(products: Product[], id: string) {
 
 function locationMatches(rowLocationId: string | null, selectedLocationId: string) {
   return selectedLocationId === 'all' || rowLocationId === selectedLocationId
+}
+
+function productMatches(productId: string | null, request: Pick<GenerateReportRequest, 'productId'>) {
+  return !request.productId || request.productId === 'all' || productId === request.productId
+}
+
+function productionReportsForRequest(
+  data: ReportsData,
+  request: GenerateReportRequest,
+) {
+  return data.productionReports
+    .filter((report) => dateWithin(report.production_date, request))
+    .sort((a, b) => a.production_date.localeCompare(b.production_date))
 }
 
 function dateWithin(value: string | null | undefined, request: Pick<GenerateReportRequest, 'dateFrom' | 'dateTo'>) {

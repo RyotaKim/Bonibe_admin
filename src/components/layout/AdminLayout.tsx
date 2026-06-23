@@ -1,13 +1,11 @@
 import { LogOut, Search, ShieldCheck } from 'lucide-react'
-import { NavLink, Route, Routes } from 'react-router-dom'
+import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
 import { AccountsPage } from '../../pages/AccountsPage'
 import { CatalogPage } from '../../pages/CatalogPage'
 import { LocationsPage } from '../../pages/LocationsPage'
 import { OverviewPage } from '../../pages/OverviewPage'
 import { ReportsPage } from '../../pages/ReportsPage'
 import { SettingsPage } from '../../pages/SettingsPage'
-import { StaffPage } from '../../pages/StaffPage'
-import { SyncReviewPage } from '../../pages/SyncReviewPage'
 import { pages } from '../../routes/pageConfig'
 import type { Profile } from '../../types/admin'
 import { getSupabaseStatus, supabase } from '../../lib/supabase'
@@ -46,12 +44,12 @@ export function AdminLayout({ profile }: { profile: Profile }) {
         <Routes>
           <Route path="/" element={<OverviewPage />} />
           <Route path="/accounts" element={<AccountsPage />} />
-          <Route path="/staff" element={<StaffPage />} />
           <Route path="/catalog" element={<CatalogPage />} />
           <Route path="/locations" element={<LocationsPage />} />
-          <Route path="/sync" element={<SyncReviewPage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/staff" element={<Navigate to="/accounts" replace />} />
+          <Route path="/sync" element={<Navigate to="/reports" replace />} />
         </Routes>
       </main>
     </div>

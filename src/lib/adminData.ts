@@ -263,6 +263,15 @@ export async function fetchDashboard(): Promise<DashboardData> {
 export async function fetchStaff(): Promise<StaffData> {
   const client = requireSupabase()
 
+  const { error: backfillError } = await client.rpc('backfill_staff_auth_users')
+
+  if (backfillError && !isMissingRpc(backfillError)) {
+    throw createMutationError(
+      'Could not repair existing account users',
+      backfillError,
+    )
+  }
+
   const [profiles, locations] = await Promise.all([
     selectList<Profile>(
       'profiles',
@@ -641,44 +650,26 @@ export async function saveProfile(form: FormData) {
     }
   }
 
-  const payload = {
-    id,
-    company_id: String(form.get('company_id') || companyId).trim(),
-    staff_name: staffName,
-    employee_code: String(form.get('employee_code') || '').trim() || null,
-    email: String(form.get('email') || '').trim() || null,
-    role: appRole,
-    assigned_location_id: ownsLocation(appRole) ? assignedLocationId : null,
-    active: form.get('active') === 'on',
-    updated_at: new Date().toISOString(),
-  }
-
-  const { error } = await client.from('profiles').upsert(payload)
+  const { error } = await client.rpc('save_staff_profile_account', {
+    p_profile_id: id,
+    p_company_id: String(form.get('company_id') || companyId).trim(),
+    p_staff_name: staffName,
+    p_employee_code: String(form.get('employee_code') || '').trim() || null,
+    p_email: String(form.get('email') || '').trim() || null,
+    p_role: appRole,
+    p_assigned_location_id: ownsLocation(appRole) ? assignedLocationId : null,
+    p_active: form.get('active') === 'on',
+    p_sync_location_name: form.get('sync_location_name') === 'on',
+  })
 
   if (error) {
-    throw createMutationError('Could not save account profile', error)
-  }
-
-  if (
-    form.get('sync_location_name') === 'on' &&
-    ownsLocation(appRole) &&
-    assignedLocationId
-  ) {
-    const { error: locationError } = await client
-      .from('locations')
-      .update({
-        name: staffName,
-        type: appRole,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', assignedLocationId)
-
-    if (locationError) {
-      throw createMutationError(
-        'Could not update assigned location',
-        locationError,
+    if (isMissingRpc(error)) {
+      throw new Error(
+        'Database setup needed: run bonibe_admin/supabase/profile_only_account_creation.sql in the Supabase SQL Editor, then try saving the account again.',
       )
     }
+
+    throw createMutationError('Could not save account profile', error)
   }
 
   if (newPassword) {
@@ -701,6 +692,7 @@ export async function saveProfile(form: FormData) {
 
 export async function createStaffAccount(form: FormData) {
   const client = requireSupabase()
+  const isolatedClient = createIsolatedSupabaseClient()
   const email = String(form.get('email') || '').trim()
   const password = String(form.get('password') || '').trim()
   const confirmPassword = String(form.get('confirm_password') || '').trim()
@@ -731,73 +723,33 @@ export async function createStaffAccount(form: FormData) {
 
   const appRole = role as ValidRole
 
-  if (appRole === 'admin') {
-    const authClient = createIsolatedSupabaseClient()
-    const { data: authData, error: authError } = await authClient.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          staff_name: staffName,
-          employee_code: employeeCode || null,
-          role: appRole,
-        },
+  const { data: authSignup, error: authError } = await isolatedClient.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        staff_name: staffName,
+        employee_code: employeeCode || null,
+        role: appRole,
       },
-    })
+    },
+  })
 
-    if (authError) {
-      throw createMutationError(
-        'Could not create admin auth account',
-        authError,
-      )
-    }
+  if (authError) {
+    throw createMutationError('Could not create Supabase Auth user', authError)
+  }
 
-    const userId = authData.user?.id
-
-    if (!userId) {
-      throw new Error(
-        'The admin auth account was started, but no user ID was returned.',
-      )
-    }
-
-    const { error: profileError } = await client.from('profiles').upsert({
-      id: userId,
-      company_id: company,
-      staff_name: staffName,
-      employee_code: employeeCode || null,
-      email,
-      password_hash: null,
-      role: appRole,
-      assigned_location_id: null,
-      active: true,
-      updated_at: new Date().toISOString(),
-    })
-
-    if (profileError) {
-      throw createMutationError('Could not create admin profile', profileError)
-    }
-
-    const { error: passwordError } = await client.rpc(
-      'update_staff_profile_password',
-      {
-        p_profile_id: userId,
-        p_password: password,
-      },
+  const authUserId = authSignup.user?.id
+  if (!authUserId) {
+    throw new Error(
+      'Supabase Auth did not return a user id for the new account.',
     )
-
-    if (passwordError) {
-      throw createMutationError(
-        'Could not confirm admin password',
-        passwordError,
-      )
-    }
-
-    return { userId, email, role: appRole }
   }
 
   const { data, error } = await client.rpc(
     'create_staff_profile_with_location',
     {
+      p_auth_user_id: authUserId,
       p_company_id: company,
       p_email: email,
       p_employee_code: employeeCode || null,
@@ -810,12 +762,14 @@ export async function createStaffAccount(form: FormData) {
   if (error) {
     if (isMissingRpc(error)) {
       throw new Error(
-        'Database setup needed: run supabase/profile_only_account_creation.sql in the Supabase SQL Editor, then try creating the account again.',
+        'Database setup needed: run bonibe_admin/supabase/profile_only_account_creation.sql in the Supabase SQL Editor, then try creating the account again.',
       )
     }
 
     throw createMutationError('Could not create account profile', error)
   }
+
+  await isolatedClient.auth.signOut()
 
   return data
 }
@@ -835,60 +789,17 @@ export async function deleteProfile(profileId: string) {
     )
   }
 
-  const { data: profile, error: profileError } = await client
-    .from('profiles')
-    .select('id, role, assigned_location_id')
-    .eq('id', id)
-    .maybeSingle()
-
-  if (profileError) {
-    throw createMutationError(
-      'Could not load account before deleting',
-      profileError,
-    )
-  }
-
-  if (!profile) {
-    throw new Error('This account was already deleted or could not be found.')
-  }
-
-  const locationId =
-    ownsLocation(profile.role as ValidRole) && profile.assigned_location_id
-      ? profile.assigned_location_id
-      : null
-
-  const { count: sharedLocationCount, error: countError } = locationId
-    ? await client
-        .from('profiles')
-        .select('*', { count: 'exact', head: true })
-        .eq('assigned_location_id', locationId)
-        .neq('id', id)
-    : { count: 0, error: null }
-
-  if (countError) {
-    throw createMutationError(
-      'Could not check account workspace ownership',
-      countError,
-    )
-  }
-
-  const { error } = await client.from('profiles').delete().eq('id', id)
+  const { error } = await client.rpc('delete_staff_account', {
+    p_profile_id: id,
+  })
 
   if (error) {
-    throw createMutationError('Could not delete account profile', error)
-  }
-
-  if (locationId && (sharedLocationCount ?? 0) === 0) {
-    const { error: locationDeleteError } = await client
-      .from('locations')
-      .delete()
-      .eq('id', locationId)
-
-    if (locationDeleteError) {
-      await client
-        .from('locations')
-        .update({ active: false, updated_at: new Date().toISOString() })
-        .eq('id', locationId)
+    if (isMissingRpc(error)) {
+      throw new Error(
+        'Database setup needed: run bonibe_admin/supabase/profile_only_account_creation.sql in the Supabase SQL Editor, then try deleting the account again.',
+      )
     }
+
+    throw createMutationError('Could not delete account profile', error)
   }
 }

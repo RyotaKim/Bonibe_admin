@@ -40,13 +40,16 @@ supabase/admin_access_policies.sql
 
 This enables admin-profile users to manage profiles, companies, locations, products, bundles, and audit visibility through normal authenticated RLS.
 
-For profile-only staff creation without Supabase Auth verification emails, also run:
+For auth-backed staff creation, password syncing, delete handling, and repair of
+older profile-only accounts, also run:
 
 ```text
 supabase/profile_only_account_creation.sql
 ```
 
-This installs the admin-only `create_staff_profile_with_location` database function used by the Accounts page.
+This installs the admin-only account RPCs used by the Accounts page, including
+`backfill_staff_auth_users()` for older profile rows that were created without a
+matching `auth.users` record.
 
 ## Admin scope
 

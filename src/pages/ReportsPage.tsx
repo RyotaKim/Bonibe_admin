@@ -14,11 +14,7 @@ import { useAdminQuery } from '../hooks/useAdminQuery'
 import { runMutation, useMutationStatus } from '../hooks/useMutationStatus'
 import { fetchReports } from '../lib/adminData'
 import {
-  generateAllReports,
   generateReport,
-  generatedReportKinds,
-  type GeneratedReportFormat,
-  type GeneratedReportKind,
 } from '../lib/reportGenerator'
 import type { ReportExport, ReportsData } from '../types/admin'
 
@@ -27,11 +23,9 @@ export function ReportsPage() {
   const [filter, setFilter] = useState('')
   const [locationFilter, setLocationFilter] = useState('all')
   const [previewReport, setPreviewReport] = useState<ReportExport | null>(null)
-  const [kind, setKind] = useState<GeneratedReportKind>('branch-daily-summary')
-  const [format, setFormat] = useState<GeneratedReportFormat>('pdf')
-  const [sourceLocationId, setSourceLocationId] = useState('all')
-  const [dateFrom, setDateFrom] = useState(() => defaultDateFrom())
-  const [dateTo, setDateTo] = useState(() => today())
+  const [branchLocationId, setBranchLocationId] = useState('all')
+  const [productId, setProductId] = useState('all')
+  const [productionDate, setProductionDate] = useState(() => today())
   const [generateStatus, setGenerateStatus] = useMutationStatus()
   const filtered = useMemo(() => {
     const reports = query.data?.reports ?? []
@@ -70,31 +64,16 @@ export function ReportsPage() {
     )
   }, [query.data?.locations])
 
-  const generatorLocations = useMemo(() => {
+  const branchOptions = useMemo(() => {
     const locations = query.data?.locations ?? []
 
-    if (kind.startsWith('branch')) {
-      return locations.filter((location) => location.type === 'branch')
-    }
+    return locations.filter((location) => location.type === 'branch')
+  }, [query.data?.locations])
+  const productOptions = useMemo(() => {
+    const products = query.data?.products ?? []
 
-    if (kind.startsWith('client')) {
-      return locations.filter((location) => location.type === 'client')
-    }
-
-    return locations.filter((location) =>
-      ['branch', 'client', 'kitchen'].includes(location.type),
-    )
-  }, [kind, query.data?.locations])
-  const sourceAllLabel = kind.startsWith('branch')
-    ? 'All branches'
-    : kind.startsWith('client')
-      ? 'All clients'
-      : 'All branches and clients'
-
-  function onKindChange(nextKind: GeneratedReportKind) {
-    setKind(nextKind)
-    setSourceLocationId('all')
-  }
+    return products.filter((product) => product.active)
+  }, [query.data?.products])
 
   return (
     <PageShell
@@ -105,65 +84,44 @@ export function ReportsPage() {
         {(data: ReportsData) => (
           <>
             <NoticeList notices={data.notices} />
-            <Panel title="Generate Reports" icon={Archive}>
+            <Panel title="Daily Production Report" icon={Archive}>
               <MutationNotice status={generateStatus} />
               <div className="report-generator-grid">
                 <label className="field">
-                  <span>Report</span>
+                  <span>Branch</span>
                   <select
-                    value={kind}
-                    onChange={(event) =>
-                      onKindChange(event.target.value as GeneratedReportKind)
-                    }
+                    value={branchLocationId}
+                    onChange={(event) => setBranchLocationId(event.target.value)}
                   >
-                    {generatedReportKinds.map((item) => (
-                      <option key={item.value} value={item.value}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  <span>Source</span>
-                  <select
-                    value={sourceLocationId}
-                    onChange={(event) => setSourceLocationId(event.target.value)}
-                  >
-                    <option value="all">{sourceAllLabel}</option>
-                    {generatorLocations.map((location) => (
+                    <option value="all">All branches</option>
+                    {branchOptions.map((location) => (
                       <option key={location.id} value={location.id}>
-                        {location.name} ({location.type})
+                        {location.name}
                       </option>
                     ))}
                   </select>
                 </label>
                 <label className="field">
-                  <span>From</span>
-                  <input
-                    type="date"
-                    value={dateFrom}
-                    onChange={(event) => setDateFrom(event.target.value)}
-                  />
-                </label>
-                <label className="field">
-                  <span>To</span>
-                  <input
-                    type="date"
-                    value={dateTo}
-                    onChange={(event) => setDateTo(event.target.value)}
-                  />
-                </label>
-                <label className="field">
-                  <span>Format</span>
+                  <span>Product</span>
                   <select
-                    value={format}
-                    onChange={(event) =>
-                      setFormat(event.target.value as GeneratedReportFormat)
-                    }
+                    value={productId}
+                    onChange={(event) => setProductId(event.target.value)}
                   >
-                    <option value="pdf">PDF</option>
-                    <option value="xlsx">Excel</option>
+                    <option value="all">All products</option>
+                    {productOptions.map((product) => (
+                      <option key={product.id} value={product.id}>
+                        {product.name}
+                      </option>
+                    ))}
                   </select>
+                </label>
+                <label className="field">
+                  <span>Production date</span>
+                  <input
+                    type="date"
+                    value={productionDate}
+                    onChange={(event) => setProductionDate(event.target.value)}
+                  />
                 </label>
               </div>
               <div className="button-row report-generator-actions">
@@ -173,21 +131,21 @@ export function ReportsPage() {
                   onClick={() =>
                     void runMutation(
                       setGenerateStatus,
-                      async () => {
+                      () =>
                         generateReport(data, {
-                          kind,
-                          format,
-                          locationId: sourceLocationId,
-                          dateFrom,
-                          dateTo,
-                        })
-                      },
-                      'Report generated.',
+                          kind: 'branch-daily-production',
+                          format: 'xlsx',
+                          locationId: branchLocationId,
+                          productId,
+                          dateFrom: productionDate,
+                          dateTo: productionDate,
+                        }),
+                      'Branch production report generated.',
                     )
                   }
                 >
                   <FileDown size={18} />
-                  Generate Selected
+                  Generate Branch PROD
                 </button>
                 <button
                   className="inline-action"
@@ -196,16 +154,20 @@ export function ReportsPage() {
                     void runMutation(
                       setGenerateStatus,
                       () =>
-                        generateAllReports(data, {
-                          dateFrom,
-                          dateTo,
+                        generateReport(data, {
+                          kind: 'bonibe-daily-production-summary',
+                          format: 'xlsx',
+                          locationId: 'all',
+                          productId,
+                          dateFrom: productionDate,
+                          dateTo: productionDate,
                         }),
-                      'Daily and weekly report pack generated.',
+                      'Whole Bonibe production summary generated.',
                     )
                   }
                 >
                   <Archive size={16} />
-                  Generate All PDF + Excel
+                  Whole Bonibe XLSX
                 </button>
               </div>
             </Panel>
@@ -274,11 +236,4 @@ export function ReportsPage() {
 
 function today() {
   return new Date().toISOString().slice(0, 10)
-}
-
-function defaultDateFrom() {
-  const date = new Date()
-  date.setDate(date.getDate() - 6)
-
-  return date.toISOString().slice(0, 10)
 }
