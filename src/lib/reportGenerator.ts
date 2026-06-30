@@ -1,17 +1,19 @@
 import type {
+  BranchInventoryLine,
+  BranchInventorySession,
   BranchLedgerEntry,
   ClientLedgerEntry,
   DamageReturnEntry,
+  KitchenInventoryLine,
+  KitchenInventorySession,
   Location,
   Product,
-  ProductionAllocation,
-  ProductionReport,
-  ProductionReportLine,
   ReportsData,
 } from '../types/admin'
 
 export type GeneratedReportKind =
   | 'branch-daily-production'
+  | 'kitchen-daily-production'
   | 'bonibe-daily-production-summary'
   | 'branch-daily-summary'
   | 'branch-weekly-summary'
@@ -37,16 +39,19 @@ type ReportTable = {
   headers: string[]
   rows: Array<Array<string | number>>
   totals?: Array<string | number>
+  summary?: Array<[string, string | number]>
+  columnWidths?: number[]
 }
 
 export const generatedReportKinds: Array<{
   value: GeneratedReportKind
   label: string
 }> = [
-  { value: 'branch-daily-production', label: 'Branch Daily Production' },
+  { value: 'branch-daily-production', label: 'Branch Daily Report' },
+  { value: 'kitchen-daily-production', label: 'Kitchen Daily Report' },
   {
     value: 'bonibe-daily-production-summary',
-    label: 'Whole Bonibe Daily Production Summary',
+    label: 'Whole Bonibe Daily Summary',
   },
   { value: 'branch-daily-summary', label: 'Branch Daily Summary' },
   { value: 'branch-weekly-summary', label: 'Branch Weekly Summary' },
@@ -127,6 +132,7 @@ async function addToZip(
 function reportTable(data: ReportsData, request: GenerateReportRequest): ReportTable {
   return {
     'branch-daily-production': () => branchProductionTable(data, request),
+    'kitchen-daily-production': () => kitchenProductionTable(data, request),
     'bonibe-daily-production-summary': () =>
       bonibeProductionSummaryTable(data, request),
     'branch-daily-summary': () => branchSummaryTable(data, request, 'Daily'),
@@ -142,135 +148,141 @@ function branchProductionTable(
   data: ReportsData,
   request: GenerateReportRequest,
 ): ReportTable {
-  const branches = data.locations
-    .filter((location) => location.type === 'branch')
-    .filter((location) => locationMatches(location.id, request.locationId))
-  const reports = productionReportsForRequest(data, request)
-  const reportIds = new Set(reports.map((report) => report.id))
-  const lines = data.productionLines
-    .filter((line) => reportIds.has(line.production_report_id))
+  const sessions = branchInventorySessionsForRequest(data, request)
+  const sessionsById = new Map(sessions.map((session) => [session.id, session]))
+  const lines = data.branchInventoryLines
+    .filter((line) => sessionsById.has(line.session_id))
     .filter((line) => productMatches(line.product_id, request))
-  const branchRows = lines
-    .flatMap((line) => {
-      const report = reports.find((item) => item.id === line.production_report_id)
-
-      return branches
-        .map((branch) => {
-          const allocated = int(
-            sum(
-              data.productionAllocations.filter(
-                (allocation) =>
-                  allocation.production_report_line_id === line.id &&
-                  allocation.destination_location_id === branch.id,
-              ),
-              (allocation) => allocation.quantity,
-            ),
-          )
-
-          if (allocated <= 0) {
-            return null
-          }
-
-          return {
-            date: dateOnly(report?.production_date),
-            branch: branch.name,
-            product: productName(data.products, line.product_id),
-            plates: line.plates,
-            piecesPerPlate: line.pieces_per_plate,
-            expected: line.expected_pieces,
-            actual: line.actual_pieces,
-            allocated,
-            damages: line.damages,
-            returns: line.returns,
-            unknownLoss: line.unknown_loss,
-            balance: line.balance,
-            status: line.status,
-            notes: line.notes ?? line.reason ?? '',
-            price: productPrice(data.products, line.product_id),
-          }
-        })
-        .filter((row): row is NonNullable<typeof row> => Boolean(row))
-    })
-    .sort((a, b) =>
-      [a.date, a.branch, a.product].join('|').localeCompare(
-        [b.date, b.branch, b.product].join('|'),
-      ),
-    )
-
-  const singleBranch = request.locationId !== 'all'
 
   return {
-    title: 'Branch Daily Production Report',
+    title: 'Branch Daily Report',
     subtitle: subtitle(data, request),
     headers: [
       'Date',
       'Branch',
       'Product',
-      'Price',
-      'Plates',
-      'Pieces/Plate',
-      'Expected',
-      'Actual',
-      'Allocated to Branch',
+      'Category',
+      'Opening',
+      'Deliveries',
+      'Sold',
+      'Sales Amount',
       'Damages',
       'Returns',
-      'Unknown Loss',
-      'Balance',
-      'Status',
-      'Notes',
+      'Molds',
+      'Transfer Out',
+      'Expected End',
+      'Actual Count',
+      'Variance',
+      'Remarks',
     ],
-    rows: branchRows.map((row) => [
-      row.date,
-      row.branch,
-      row.product,
-      money(row.price),
-      row.plates,
-      row.piecesPerPlate,
-      row.expected,
-      row.actual,
-      row.allocated,
-      row.damages,
-      row.returns,
-      row.unknownLoss,
-      row.balance,
-      row.status,
-      row.notes,
-    ]),
-    totals: singleBranch
-      ? [
-          'TOTAL',
-          '',
-          '',
-          '',
-          int(sum(branchRows, (row) => row.plates)),
-          '',
-          int(sum(branchRows, (row) => row.expected)),
-          int(sum(branchRows, (row) => row.actual)),
-          int(sum(branchRows, (row) => row.allocated)),
-          int(sum(branchRows, (row) => row.damages)),
-          int(sum(branchRows, (row) => row.returns)),
-          int(sum(branchRows, (row) => row.unknownLoss)),
-          int(sum(branchRows, (row) => row.balance)),
-          '',
-          '',
-        ]
-      : [
-          'TOTAL',
-          '',
-          '',
-          '',
-          '',
-          '',
-          '',
-          '',
-          int(sum(branchRows, (row) => row.allocated)),
-          '',
-          '',
-          '',
-          '',
-          '',
-          '',
-        ],
+    summary: [
+      ['Rows', lines.length],
+      ['Total Sales', money(sum(lines, (line) => Number(line.sales_amount)))],
+      ['Total Deliveries', int(sum(lines, (line) => line.delivery_qty))],
+      ['Total Sold', int(sum(lines, (line) => line.sold_qty))],
+      ['Total Damages', int(sum(lines, (line) => line.damage_qty))],
+      ['Total Molds', int(sum(lines, (line) => line.mold_qty))],
+      ['Total Transfer Out', int(sum(lines, (line) => line.transfer_out_qty))],
+      ['Total Variance', int(sum(lines, (line) => line.variance_qty ?? 0))],
+    ],
+    columnWidths: [13, 22, 24, 15, 11, 12, 10, 14, 10, 10, 10, 14, 14, 13, 11, 28],
+    rows: lines.map((line) =>
+      branchInventoryRow(data.locations, sessionsById, line),
+    ),
+    totals: [
+      'TOTAL',
+      '',
+      '',
+      '',
+      int(sum(lines, (line) => line.opening_count)),
+      int(sum(lines, (line) => line.delivery_qty)),
+      int(sum(lines, (line) => line.sold_qty)),
+      money(sum(lines, (line) => Number(line.sales_amount))),
+      int(sum(lines, (line) => line.damage_qty)),
+      int(sum(lines, (line) => line.return_qty)),
+      int(sum(lines, (line) => line.mold_qty)),
+      int(sum(lines, (line) => line.transfer_out_qty)),
+      int(sum(lines, (line) => line.expected_ending_count)),
+      int(sum(lines, (line) => line.actual_ending_count ?? 0)),
+      int(sum(lines, (line) => line.variance_qty ?? 0)),
+      '',
+    ],
+  }
+}
+
+function kitchenProductionTable(
+  data: ReportsData,
+  request: GenerateReportRequest,
+): ReportTable {
+  const sessions = kitchenInventorySessionsForRequest(data, request)
+  const sessionsById = new Map(sessions.map((session) => [session.id, session]))
+  const lines = data.kitchenInventoryLines
+    .filter((line) => sessionsById.has(line.session_id))
+    .filter((line) => productMatches(line.product_id, request))
+
+  return {
+    title: 'Kitchen Daily Report',
+    subtitle: subtitle(data, request),
+    headers: [
+      'Date',
+      'Kitchen',
+      'Bread',
+      'Category',
+      'PRC',
+      'PRMG',
+      'Production',
+      'Branch Allocated',
+      'SPR',
+      'GF',
+      'S/O',
+      'DMG',
+      'UNK',
+      'RMG',
+      'Expected Ending',
+      'Actual Count',
+      'Variance',
+      'Peso Value',
+      'Status',
+      'Remarks',
+    ],
+    summary: [
+      ['Rows', lines.length],
+      ['Total Produced', int(sum(lines, (line) => line.produced_qty))],
+      ['Branch Allocated', int(sum(lines, (line) => line.order_allocation_qty))],
+      ['Total RMG', int(sum(lines, (line) => kitchenRemaining(line)))],
+      ['Total DMG', int(sum(lines, (line) => line.damage_qty))],
+      ['Total UNK', int(sum(lines, (line) => line.unknown_loss_qty))],
+      ['Total Variance', int(sum(lines, (line) => kitchenVariance(line)))],
+      ['Total Peso Value', money(sum(lines, (line) => kitchenProducedValue(line)))],
+    ],
+    columnWidths: [
+      13, 20, 24, 15, 10, 10, 13, 16, 10, 10, 10, 10, 10, 10, 15, 13, 11, 14, 13, 28,
+    ],
+    rows: lines.map((line) =>
+      kitchenInventoryRow(data.locations, sessionsById, line),
+    ),
+    totals: [
+      'TOTAL',
+      '',
+      '',
+      '',
+      '',
+      int(sum(lines, (line) => line.previous_remaining_count)),
+      int(sum(lines, (line) => line.produced_qty)),
+      int(sum(lines, (line) => line.order_allocation_qty)),
+      int(sum(lines, (line) => line.manual_allocation_qty)),
+      int(sum(lines, (line) => line.good_for_qty)),
+      int(sum(lines, (line) => line.sold_out_qty)),
+      int(sum(lines, (line) => line.damage_qty)),
+      int(sum(lines, (line) => line.unknown_loss_qty)),
+      int(sum(lines, (line) => kitchenRemaining(line))),
+      int(sum(lines, (line) => line.expected_ending_count)),
+      int(sum(lines, (line) => line.actual_ending_count ?? 0)),
+      int(sum(lines, (line) => kitchenVariance(line))),
+      money(sum(lines, (line) => kitchenProducedValue(line))),
+      '',
+      '',
+    ],
   }
 }
 
@@ -278,12 +290,40 @@ function bonibeProductionSummaryTable(
   data: ReportsData,
   request: GenerateReportRequest,
 ): ReportTable {
-  const table = productionTable(data, request)
+  const rows = wholeBonibeRows(data, request)
 
   return {
-    ...table,
-    title: 'Whole Bonibe Daily Production Summary',
+    title: 'Whole Bonibe Daily Summary',
     subtitle: subtitle(data, request),
+    headers: [
+      'Date',
+      'Source',
+      'Location',
+      'Product',
+      'Category',
+      'In / Produced',
+      'Out / Sold',
+      'Remaining',
+      'Damage',
+      'Unknown / Molds',
+      'Variance',
+      'Peso Value',
+      'Status',
+      'Remarks',
+    ],
+    summary: [
+      ['Rows', rows.length],
+      ['Total In / Produced', int(sum(rows, (row) => Number(row[5])))],
+      ['Total Out / Sold', int(sum(rows, (row) => Number(row[6])))],
+      ['Total Remaining', int(sum(rows, (row) => Number(row[7])))],
+      ['Total Damage', int(sum(rows, (row) => Number(row[8])))],
+      ['Unknown / Molds', int(sum(rows, (row) => Number(row[9])))],
+      ['Total Variance', int(sum(rows, (row) => Number(row[10])))],
+      ['Total Peso Value', money(sum(rows, (row) => Number(row[11])))],
+    ],
+    columnWidths: [13, 12, 22, 24, 15, 15, 13, 12, 11, 15, 11, 14, 13, 28],
+    rows,
+    totals: wholeBonibeTotals(data, request),
   }
 }
 
@@ -391,66 +431,7 @@ function productionTable(
   data: ReportsData,
   request: GenerateReportRequest,
 ): ReportTable {
-  const locations = data.locations.filter((location) =>
-    ['branch', 'client'].includes(location.type),
-  )
-  const reports = productionReportsForRequest(data, request)
-  const reportIds = new Set(reports.map((report) => report.id))
-  const lines = data.productionLines
-    .filter((line) => reportIds.has(line.production_report_id))
-    .filter((line) => productMatches(line.product_id, request))
-
-  const headers = [
-    'Date',
-    'Product',
-    'Price',
-    'Plates',
-    'Pieces/Plate',
-    'Expected',
-    'Actual',
-    ...locations.map((location) => location.name),
-    'Damages',
-    'Returns',
-    'Unknown Loss',
-    'Balance',
-    'Status',
-    'Notes',
-  ]
-
-  return {
-    title: 'Production Report',
-    subtitle: subtitle(data, request),
-    headers,
-    rows: lines.map((line) =>
-      productionRow(
-        data.products,
-        reports,
-        locations,
-        data.productionAllocations,
-        line,
-      ),
-    ),
-    totals: [
-      'TOTAL',
-      '',
-      '',
-      int(sum(lines, (line) => line.plates)),
-      '',
-      int(sum(lines, (line) => line.expected_pieces)),
-      int(sum(lines, (line) => line.actual_pieces)),
-      ...locations.map((location) =>
-        int(
-          sumAllocationsForLocation(data.productionAllocations, lines, location.id),
-        ),
-      ),
-      int(sum(lines, (line) => line.damages)),
-      int(sum(lines, (line) => line.returns)),
-      int(sum(lines, (line) => line.unknown_loss)),
-      int(sum(lines, (line) => line.balance)),
-      '',
-      '',
-    ],
-  }
+  return kitchenProductionTable(data, request)
 }
 
 function damagesTable(data: ReportsData, request: GenerateReportRequest): ReportTable {
@@ -531,41 +512,156 @@ function clientRow(
   ]
 }
 
-function productionRow(
-  products: Product[],
-  reports: ProductionReport[],
+function branchInventoryRow(
   locations: Location[],
-  allocations: ProductionAllocation[],
-  line: ProductionReportLine,
+  sessionsById: Map<string, BranchInventorySession>,
+  line: BranchInventoryLine,
 ) {
-  const report = reports.find((item) => item.id === line.production_report_id)
+  const session = sessionsById.get(line.session_id)
 
   return [
-    dateOnly(report?.production_date),
-    productName(products, line.product_id),
-    money(productPrice(products, line.product_id)),
-    line.plates,
-    line.pieces_per_plate,
-    line.expected_pieces,
-    line.actual_pieces,
-    ...locations.map((location) =>
-      int(
-        sum(
-          allocations.filter(
-            (allocation) =>
-              allocation.production_report_line_id === line.id &&
-              allocation.destination_location_id === location.id,
-          ),
-          (allocation) => allocation.quantity,
-        ),
-      ),
-    ),
-    line.damages,
-    line.returns,
-    line.unknown_loss,
-    line.balance,
-    line.status,
-    line.notes ?? line.reason ?? '',
+    dateOnly(session?.business_date),
+    locationName(locations, session?.branch_location_id),
+    line.product_name,
+    line.category,
+    line.opening_count,
+    line.delivery_qty,
+    line.sold_qty,
+    money(Number(line.sales_amount)),
+    line.damage_qty,
+    line.return_qty,
+    line.mold_qty,
+    line.transfer_out_qty,
+    line.expected_ending_count,
+    line.actual_ending_count ?? '',
+    branchVariance(line),
+    line.remarks ?? '',
+  ]
+}
+
+function kitchenInventoryRow(
+  locations: Location[],
+  sessionsById: Map<string, KitchenInventorySession>,
+  line: KitchenInventoryLine,
+) {
+  const session = sessionsById.get(line.session_id)
+
+  return [
+    dateOnly(session?.business_date),
+    locationName(locations, session?.kitchen_location_id),
+    line.product_name,
+    line.category,
+    money(Number(line.unit_price)),
+    line.previous_remaining_count,
+    line.produced_qty,
+    line.order_allocation_qty,
+    line.manual_allocation_qty,
+    line.good_for_qty,
+    line.sold_out_qty,
+    line.damage_qty,
+    line.unknown_loss_qty,
+    kitchenRemaining(line),
+    line.expected_ending_count,
+    line.actual_ending_count ?? '',
+    kitchenVariance(line),
+    money(kitchenProducedValue(line)),
+    kitchenStatus(line),
+    line.remarks ?? '',
+  ]
+}
+
+function wholeBonibeRows(
+  data: ReportsData,
+  request: GenerateReportRequest,
+) {
+  const branchSessions = branchInventorySessionsForRequest(data, {
+    ...request,
+    locationId: 'all',
+  })
+  const branchSessionsById = new Map(
+    branchSessions.map((session) => [session.id, session]),
+  )
+  const branchRows = data.branchInventoryLines
+    .filter((line) => branchSessionsById.has(line.session_id))
+    .filter((line) => productMatches(line.product_id, request))
+    .map((line) => {
+      const session = branchSessionsById.get(line.session_id)
+
+      return [
+        dateOnly(session?.business_date),
+        'Branch',
+        locationName(data.locations, session?.branch_location_id),
+        line.product_name,
+        line.category,
+        line.delivery_qty,
+        line.sold_qty,
+        branchRemaining(line),
+        line.damage_qty,
+        line.mold_qty,
+        branchVariance(line),
+        money(Number(line.sales_amount)),
+        branchStatus(line),
+        line.remarks ?? '',
+      ]
+    })
+
+  const kitchenSessions = kitchenInventorySessionsForRequest(data, {
+    ...request,
+    locationId: 'all',
+  })
+  const kitchenSessionsById = new Map(
+    kitchenSessions.map((session) => [session.id, session]),
+  )
+  const kitchenRows = data.kitchenInventoryLines
+    .filter((line) => kitchenSessionsById.has(line.session_id))
+    .filter((line) => productMatches(line.product_id, request))
+    .map((line) => {
+      const session = kitchenSessionsById.get(line.session_id)
+
+      return [
+        dateOnly(session?.business_date),
+        'Kitchen',
+        locationName(data.locations, session?.kitchen_location_id),
+        line.product_name,
+        line.category,
+        line.produced_qty,
+        line.order_allocation_qty + line.manual_allocation_qty,
+        kitchenRemaining(line),
+        line.damage_qty,
+        line.unknown_loss_qty,
+        kitchenVariance(line),
+        money(kitchenProducedValue(line)),
+        kitchenStatus(line),
+        line.remarks ?? '',
+      ]
+    })
+
+  return [...kitchenRows, ...branchRows].sort((left, right) =>
+    String(left[0]).localeCompare(String(right[0])) ||
+    String(left[1]).localeCompare(String(right[1])) ||
+    String(left[2]).localeCompare(String(right[2])) ||
+    String(left[3]).localeCompare(String(right[3])),
+  )
+}
+
+function wholeBonibeTotals(data: ReportsData, request: GenerateReportRequest) {
+  const rows = wholeBonibeRows(data, request)
+
+  return [
+    'TOTAL',
+    '',
+    '',
+    '',
+    '',
+    int(sum(rows, (row) => Number(row[5]))),
+    int(sum(rows, (row) => Number(row[6]))),
+    int(sum(rows, (row) => Number(row[7]))),
+    int(sum(rows, (row) => Number(row[8]))),
+    int(sum(rows, (row) => Number(row[9]))),
+    int(sum(rows, (row) => Number(row[10]))),
+    money(sum(rows, (row) => Number(row[11]))),
+    '',
+    '',
   ]
 }
 
@@ -616,15 +712,16 @@ async function buildPdf(table: ReportTable) {
 
 async function buildWorkbook(table: ReportTable) {
   const { default: JSZip } = await import('jszip')
-  const sheetRows = [
-    ['Bonibe Bakeshop'],
-    [table.title],
-    [table.subtitle],
-    [],
-    table.headers,
-    ...table.rows,
-    ...(table.totals ? [table.totals] : []),
-  ]
+  const workbookRows = workbookRowsFor(table)
+  const headerRowNumber =
+    workbookRows.findIndex((row) => row.kind === 'header') + 1
+  const totalRowNumber =
+    workbookRows.findIndex((row) => row.kind === 'total') + 1 || undefined
+  const columnCount = Math.max(
+    table.headers.length,
+    ...workbookRows.map((row) => row.cells.length),
+  )
+  const columnWidths = table.columnWidths ?? inferredColumnWidths(table)
   const zip = new JSZip()
 
   zip.file('[Content_Types].xml', contentTypesXml())
@@ -635,9 +732,82 @@ async function buildWorkbook(table: ReportTable) {
   zip
     .folder('xl')
     ?.folder('worksheets')
-    ?.file('sheet1.xml', worksheetXml(sheetRows))
+    ?.file(
+      'sheet1.xml',
+      worksheetXml(workbookRows, {
+        columnCount,
+        columnWidths,
+        headerRowNumber,
+        totalRowNumber,
+      }),
+    )
 
   return zip.generateAsync({ type: 'arraybuffer' })
+}
+
+type WorkbookRowKind =
+  | 'title'
+  | 'subtitle'
+  | 'meta'
+  | 'section'
+  | 'summary'
+  | 'blank'
+  | 'header'
+  | 'data'
+  | 'total'
+
+type WorkbookRow = {
+  cells: Array<string | number>
+  kind: WorkbookRowKind
+}
+
+function workbookRowsFor(table: ReportTable): WorkbookRow[] {
+  const rows: WorkbookRow[] = [
+    { kind: 'title', cells: ['Bonibe Bakeshop'] },
+    { kind: 'subtitle', cells: [table.title] },
+    { kind: 'meta', cells: [table.subtitle] },
+    { kind: 'blank', cells: [] },
+  ]
+
+  if (table.summary?.length) {
+    rows.push({ kind: 'section', cells: ['Daily Summary'] })
+    for (const chunk of chunks(table.summary, 3)) {
+      rows.push({
+        kind: 'summary',
+        cells: chunk.flatMap(([label, value]) => [label, value]),
+      })
+    }
+    rows.push({ kind: 'blank', cells: [] })
+  }
+
+  rows.push({ kind: 'header', cells: table.headers })
+  rows.push(...table.rows.map((cells) => ({ kind: 'data' as const, cells })))
+
+  if (table.totals) {
+    rows.push({ kind: 'total', cells: table.totals })
+  }
+
+  return rows
+}
+
+function chunks<T>(items: T[], size: number) {
+  const grouped: T[][] = []
+  for (let index = 0; index < items.length; index += size) {
+    grouped.push(items.slice(index, index + size))
+  }
+
+  return grouped
+}
+
+function inferredColumnWidths(table: ReportTable) {
+  return table.headers.map((header, index) => {
+    const samples = [header, ...table.rows.slice(0, 40).map((row) => row[index])]
+      .filter((value) => value !== undefined && value !== null)
+      .map((value) => String(value).length)
+    const width = Math.max(10, Math.min(30, Math.max(...samples, 10) + 2))
+
+    return width
+  })
 }
 
 function contentTypesXml() {
@@ -678,41 +848,152 @@ function workbookXml(sheetName: string) {
 function stylesXml() {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="1"><font><sz val="11"/><name val="Satoshi"/></font></fonts>
-  <fills count="1"><fill><patternFill patternType="none"/></fill></fills>
-  <borders count="1"><border/></borders>
+  <numFmts count="1">
+    <numFmt numFmtId="164" formatCode="#,##0.00"/>
+  </numFmts>
+  <fonts count="5">
+    <font><sz val="11"/><name val="Satoshi"/></font>
+    <font><b/><sz val="18"/><color rgb="FF123524"/><name val="Satoshi"/></font>
+    <font><b/><sz val="13"/><color rgb="FF123524"/><name val="Satoshi"/></font>
+    <font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Satoshi"/></font>
+    <font><b/><sz val="11"/><color rgb="FF123524"/><name val="Satoshi"/></font>
+  </fonts>
+  <fills count="5">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF14532D"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFEAF6E3"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFFF5D6"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="2">
+    <border/>
+    <border>
+      <left style="thin"><color rgb="FFD9E7CF"/></left>
+      <right style="thin"><color rgb="FFD9E7CF"/></right>
+      <top style="thin"><color rgb="FFD9E7CF"/></top>
+      <bottom style="thin"><color rgb="FFD9E7CF"/></bottom>
+    </border>
+  </borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>
+  <cellXfs count="9">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="4" fillId="3" borderId="1" xfId="0"/>
+    <xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0"/>
+    <xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="4" borderId="1" xfId="0"/>
+    <xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1"/>
+    <xf numFmtId="164" fontId="4" fillId="4" borderId="1" xfId="0" applyNumberFormat="1"/>
+  </cellXfs>
 </styleSheet>`
 }
 
-function worksheetXml(rows: Array<Array<string | number>>) {
+function worksheetXml(
+  rows: WorkbookRow[],
+  options: {
+    columnCount: number
+    columnWidths: number[]
+    headerRowNumber: number
+    totalRowNumber?: number
+  },
+) {
+  const lastColumn = columnName(options.columnCount - 1)
+  const lastRow = rows.length
+  const dataEndRow = options.totalRowNumber
+    ? Math.max(options.headerRowNumber, options.totalRowNumber - 1)
+    : lastRow
+
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetViews>
+    <sheetView workbookViewId="0">
+      <pane ySplit="${options.headerRowNumber}" topLeftCell="A${options.headerRowNumber + 1}" activePane="bottomLeft" state="frozen"/>
+    </sheetView>
+  </sheetViews>
+  ${columnsXml(options.columnWidths, options.columnCount)}
   <sheetData>
     ${rows.map((row, index) => worksheetRowXml(row, index + 1)).join('')}
   </sheetData>
+  <autoFilter ref="A${options.headerRowNumber}:${lastColumn}${dataEndRow}"/>
+  <mergeCells count="3">
+    <mergeCell ref="A1:${lastColumn}1"/>
+    <mergeCell ref="A2:${lastColumn}2"/>
+    <mergeCell ref="A3:${lastColumn}3"/>
+  </mergeCells>
 </worksheet>`
 }
 
-function worksheetRowXml(row: Array<string | number>, rowNumber: number) {
-  return `<row r="${rowNumber}">${row
-    .map((value, index) => worksheetCellXml(value, rowNumber, index))
+function columnsXml(widths: number[], columnCount: number) {
+  const columns = Array.from({ length: columnCount }, (_, index) => {
+    const width = widths[index] ?? 14
+
+    return `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`
+  })
+
+  return `<cols>${columns.join('')}</cols>`
+}
+
+function worksheetRowXml(row: WorkbookRow, rowNumber: number) {
+  const rowAttributes =
+    row.kind === 'title'
+      ? ' ht="24" customHeight="1"'
+      : row.kind === 'header'
+        ? ' ht="22" customHeight="1"'
+        : ''
+
+  return `<row r="${rowNumber}"${rowAttributes}>${row.cells
+    .map((value, index) => worksheetCellXml(value, row, rowNumber, index))
     .join('')}</row>`
 }
 
 function worksheetCellXml(
   value: string | number,
+  row: WorkbookRow,
   rowNumber: number,
   columnIndex: number,
 ) {
   const ref = `${columnName(columnIndex)}${rowNumber}`
+  const style = workbookStyleFor(row, value, columnIndex)
 
-  if (typeof value === 'number') {
-    return `<c r="${ref}"><v>${value}</v></c>`
+  if (typeof value === 'number' || isMoneyString(value)) {
+    return `<c r="${ref}" s="${style}"><v>${Number(value)}</v></c>`
   }
 
-  return `<c r="${ref}" t="inlineStr"><is><t>${xml(value)}</t></is></c>`
+  return `<c r="${ref}" s="${style}" t="inlineStr"><is><t>${xml(value)}</t></is></c>`
+}
+
+function workbookStyleFor(
+  row: WorkbookRow,
+  value: string | number,
+  columnIndex: number,
+) {
+  const moneyValue = isMoneyString(value)
+
+  if (row.kind === 'title') {
+    return 1
+  }
+  if (row.kind === 'subtitle' || row.kind === 'meta') {
+    return 2
+  }
+  if (row.kind === 'section') {
+    return 3
+  }
+  if (row.kind === 'summary') {
+    return columnIndex % 2 === 0 ? 3 : moneyValue ? 7 : 4
+  }
+  if (row.kind === 'header') {
+    return 5
+  }
+  if (row.kind === 'total') {
+    return moneyValue ? 8 : 6
+  }
+
+  return moneyValue ? 7 : 0
+}
+
+function isMoneyString(value: string | number) {
+  return typeof value === 'string' && /^-?\d+\.\d{2}$/.test(value)
 }
 
 function columnName(index: number) {
@@ -787,10 +1068,6 @@ function productName(products: Product[], id: string | null | undefined) {
   return products.find((product) => product.id === id)?.name ?? id ?? ''
 }
 
-function productPrice(products: Product[], id: string) {
-  return Number(products.find((product) => product.id === id)?.unit_price ?? 0)
-}
-
 function locationMatches(rowLocationId: string | null, selectedLocationId: string) {
   return selectedLocationId === 'all' || rowLocationId === selectedLocationId
 }
@@ -799,19 +1076,93 @@ function productMatches(productId: string | null, request: Pick<GenerateReportRe
   return !request.productId || request.productId === 'all' || productId === request.productId
 }
 
-function productionReportsForRequest(
+function branchInventorySessionsForRequest(
   data: ReportsData,
   request: GenerateReportRequest,
 ) {
-  return data.productionReports
-    .filter((report) => dateWithin(report.production_date, request))
-    .sort((a, b) => a.production_date.localeCompare(b.production_date))
+  return data.branchInventorySessions
+    .filter((session) => locationMatches(session.branch_location_id, request.locationId))
+    .filter((session) => dateWithin(session.business_date, request))
+    .sort((a, b) =>
+      [a.business_date, locationName(data.locations, a.branch_location_id)].join('|').localeCompare(
+        [b.business_date, locationName(data.locations, b.branch_location_id)].join('|'),
+      ),
+    )
+}
+
+function kitchenInventorySessionsForRequest(
+  data: ReportsData,
+  request: GenerateReportRequest,
+) {
+  return data.kitchenInventorySessions
+    .filter((session) => locationMatches(session.kitchen_location_id, request.locationId))
+    .filter((session) => dateWithin(session.business_date, request))
+    .sort((a, b) =>
+      [a.business_date, locationName(data.locations, a.kitchen_location_id)].join('|').localeCompare(
+        [b.business_date, locationName(data.locations, b.kitchen_location_id)].join('|'),
+      ),
+    )
 }
 
 function dateWithin(value: string | null | undefined, request: Pick<GenerateReportRequest, 'dateFrom' | 'dateTo'>) {
   const date = dateOnly(value)
 
   return Boolean(date) && date >= request.dateFrom && date <= request.dateTo
+}
+
+function branchRemaining(line: BranchInventoryLine) {
+  return line.actual_ending_count ?? line.expected_ending_count
+}
+
+function branchVariance(line: BranchInventoryLine) {
+  return line.variance_qty ?? branchRemaining(line) - line.expected_ending_count
+}
+
+function branchStatus(line: BranchInventoryLine) {
+  if (branchVariance(line) !== 0) {
+    return 'Variance'
+  }
+  if (line.damage_qty > 0) {
+    return 'Damage'
+  }
+  if (line.mold_qty > 0) {
+    return 'Molds'
+  }
+  if (branchRemaining(line) > 0) {
+    return 'Remaining'
+  }
+  return 'Balanced'
+}
+
+function kitchenRemaining(line: KitchenInventoryLine) {
+  return line.actual_ending_count ?? line.expected_ending_count
+}
+
+function kitchenVariance(line: KitchenInventoryLine) {
+  return line.variance_qty ?? kitchenRemaining(line) - line.expected_ending_count
+}
+
+function kitchenProducedValue(line: KitchenInventoryLine) {
+  return Number(line.produced_qty) * Number(line.unit_price)
+}
+
+function kitchenStatus(line: KitchenInventoryLine) {
+  if (kitchenVariance(line) !== 0) {
+    return 'Variance'
+  }
+  if (line.damage_qty > 0) {
+    return 'Damage'
+  }
+  if (line.unknown_loss_qty > 0) {
+    return 'Unknown'
+  }
+  if (line.sold_out_qty > 0) {
+    return 'Sold Out'
+  }
+  if (kitchenRemaining(line) > 0) {
+    return 'Remaining'
+  }
+  return 'Balanced'
 }
 
 function dateOnly(value: string | null | undefined) {
@@ -830,23 +1181,6 @@ function branchNetSales(entry: BranchLedgerEntry) {
 
 function sum<T>(rows: T[], selector: (row: T) => number) {
   return rows.reduce((total, row) => total + Number(selector(row) ?? 0), 0)
-}
-
-function sumAllocationsForLocation(
-  allocations: ProductionAllocation[],
-  lines: ProductionReportLine[],
-  locationId: string,
-) {
-  const lineIds = new Set(lines.map((line) => line.id))
-
-  return sum(
-    allocations.filter(
-      (allocation) =>
-        lineIds.has(allocation.production_report_line_id) &&
-        allocation.destination_location_id === locationId,
-    ),
-    (allocation) => allocation.quantity,
-  )
 }
 
 function money(value: number) {

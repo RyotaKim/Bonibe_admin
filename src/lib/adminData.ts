@@ -1,6 +1,9 @@
 import { createIsolatedSupabaseClient, requireSupabase } from './supabase'
 import type {
   AdminNotice,
+  BranchExpense,
+  BranchInventoryLine,
+  BranchInventorySession,
   AuditLog,
   BranchLedgerEntry,
   CatalogData,
@@ -11,10 +14,10 @@ import type {
   DashboardData,
   Location,
   LocationsData,
+  KitchenExpense,
+  KitchenInventoryLine,
+  KitchenInventorySession,
   Product,
-  ProductionAllocation,
-  ProductionReport,
-  ProductionReportLine,
   Profile,
   ReportExport,
   ReportsData,
@@ -375,9 +378,12 @@ export async function fetchReports(): Promise<ReportsData> {
     locations,
     companies,
     products,
-    productionReports,
-    productionLines,
-    productionAllocations,
+    branchInventorySessions,
+    branchInventoryLines,
+    branchExpenses,
+    kitchenInventorySessions,
+    kitchenInventoryLines,
+    kitchenExpenses,
     branchLedgerEntries,
     clientLedgerEntries,
     damageReturnEntries,
@@ -402,21 +408,45 @@ export async function fetchReports(): Promise<ReportsData> {
       'products',
       client.from('products').select('*').order('category').order('name'),
     ),
-    selectList<ProductionReport>(
-      'production_reports',
+    selectList<BranchInventorySession>(
+      'branch_inventory_sessions',
       client
-        .from('production_reports')
+        .from('branch_inventory_sessions')
         .select('*')
-        .order('production_date', { ascending: false })
-        .limit(500),
+        .order('business_date', { ascending: false })
+        .limit(1000),
     ),
-    selectList<ProductionReportLine>(
-      'production_report_lines',
-      client.from('production_report_lines').select('*').limit(2000),
+    selectList<BranchInventoryLine>(
+      'branch_inventory_lines',
+      client.from('branch_inventory_lines').select('*').limit(5000),
     ),
-    selectList<ProductionAllocation>(
-      'production_allocations',
-      client.from('production_allocations').select('*').limit(5000),
+    selectList<BranchExpense>(
+      'branch_expenses',
+      client
+        .from('branch_expenses')
+        .select('*')
+        .order('business_date', { ascending: false })
+        .limit(2000),
+    ),
+    selectList<KitchenInventorySession>(
+      'kitchen_inventory_sessions',
+      client
+        .from('kitchen_inventory_sessions')
+        .select('*')
+        .order('business_date', { ascending: false })
+        .limit(1000),
+    ),
+    selectList<KitchenInventoryLine>(
+      'kitchen_inventory_lines',
+      client.from('kitchen_inventory_lines').select('*').limit(5000),
+    ),
+    selectList<KitchenExpense>(
+      'kitchen_expenses',
+      client
+        .from('kitchen_expenses')
+        .select('*')
+        .order('business_date', { ascending: false })
+        .limit(2000),
     ),
     selectList<BranchLedgerEntry>(
       'branch_ledger_entries',
@@ -449,9 +479,12 @@ export async function fetchReports(): Promise<ReportsData> {
     locations: locations.data,
     companies: companies.data,
     products: products.data,
-    productionReports: productionReports.data,
-    productionLines: productionLines.data,
-    productionAllocations: productionAllocations.data,
+    branchInventorySessions: branchInventorySessions.data,
+    branchInventoryLines: branchInventoryLines.data,
+    branchExpenses: branchExpenses.data,
+    kitchenInventorySessions: kitchenInventorySessions.data,
+    kitchenInventoryLines: kitchenInventoryLines.data,
+    kitchenExpenses: kitchenExpenses.data,
     branchLedgerEntries: branchLedgerEntries.data,
     clientLedgerEntries: clientLedgerEntries.data,
     damageReturnEntries: damageReturnEntries.data,
@@ -460,9 +493,12 @@ export async function fetchReports(): Promise<ReportsData> {
       locations.notice,
       companies.notice,
       products.notice,
-      productionReports.notice,
-      productionLines.notice,
-      productionAllocations.notice,
+      branchInventorySessions.notice,
+      branchInventoryLines.notice,
+      branchExpenses.notice,
+      kitchenInventorySessions.notice,
+      kitchenInventoryLines.notice,
+      kitchenExpenses.notice,
       branchLedgerEntries.notice,
       clientLedgerEntries.notice,
       damageReturnEntries.notice,

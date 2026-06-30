@@ -75,7 +75,7 @@ export const pages: PageConfig[] = [
     eyebrow: 'Production exports',
     title: 'Daily production reports',
     summary:
-      'Generate branch-specific daily production reports or one whole-Bonibe Excel summary.',
+      'Generate revised kitchen, branch, or whole-Bonibe daily workflow reports.',
   },
   {
     key: 'settings',

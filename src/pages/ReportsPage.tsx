@@ -18,14 +18,22 @@ import {
 } from '../lib/reportGenerator'
 import type { ReportExport, ReportsData } from '../types/admin'
 
+type ProductionReportSource = 'branch' | 'kitchen' | 'whole'
+type ReportDatePreset = 'today' | 'this-week' | 'this-month' | 'custom'
+
 export function ReportsPage() {
   const query = useAdminQuery(fetchReports)
   const [filter, setFilter] = useState('')
   const [locationFilter, setLocationFilter] = useState('all')
   const [previewReport, setPreviewReport] = useState<ReportExport | null>(null)
+  const [reportSource, setReportSource] =
+    useState<ProductionReportSource>('kitchen')
   const [branchLocationId, setBranchLocationId] = useState('all')
+  const [kitchenLocationId, setKitchenLocationId] = useState('all')
   const [productId, setProductId] = useState('all')
-  const [productionDate, setProductionDate] = useState(() => today())
+  const [datePreset, setDatePreset] = useState<ReportDatePreset>('today')
+  const [dateFrom, setDateFrom] = useState(() => today())
+  const [dateTo, setDateTo] = useState(() => today())
   const [generateStatus, setGenerateStatus] = useMutationStatus()
   const filtered = useMemo(() => {
     const reports = query.data?.reports ?? []
@@ -69,11 +77,49 @@ export function ReportsPage() {
 
     return locations.filter((location) => location.type === 'branch')
   }, [query.data?.locations])
+  const kitchenOptions = useMemo(() => {
+    const locations = query.data?.locations ?? []
+
+    return locations.filter((location) => location.type === 'kitchen')
+  }, [query.data?.locations])
   const productOptions = useMemo(() => {
     const products = query.data?.products ?? []
 
     return products.filter((product) => product.active)
   }, [query.data?.products])
+
+  const selectedLocationId =
+    reportSource === 'branch'
+      ? branchLocationId
+      : reportSource === 'kitchen'
+        ? kitchenLocationId
+        : 'all'
+  const selectedReportKind =
+    reportSource === 'branch'
+      ? 'branch-daily-production'
+      : reportSource === 'kitchen'
+        ? 'kitchen-daily-production'
+        : 'bonibe-daily-production-summary'
+  const primaryReportLabel =
+    reportSource === 'branch'
+      ? 'Generate Branch Report'
+      : reportSource === 'kitchen'
+        ? 'Generate Kitchen Report'
+        : 'Generate Whole Bonibe'
+  const locationOptions =
+    reportSource === 'branch'
+      ? branchOptions
+      : reportSource === 'kitchen'
+        ? kitchenOptions
+        : []
+  const handlePresetChange = (preset: ReportDatePreset) => {
+    setDatePreset(preset)
+    if (preset !== 'custom') {
+      const range = rangeForPreset(preset)
+      setDateFrom(range.dateFrom)
+      setDateTo(range.dateTo)
+    }
+  }
 
   return (
     <PageShell
@@ -88,13 +134,45 @@ export function ReportsPage() {
               <MutationNotice status={generateStatus} />
               <div className="report-generator-grid">
                 <label className="field">
-                  <span>Branch</span>
+                  <span>Report source</span>
                   <select
-                    value={branchLocationId}
-                    onChange={(event) => setBranchLocationId(event.target.value)}
+                    value={reportSource}
+                    onChange={(event) =>
+                      setReportSource(event.target.value as ProductionReportSource)
+                    }
                   >
-                    <option value="all">All branches</option>
-                    {branchOptions.map((location) => (
+                    <option value="kitchen">Kitchen daily report</option>
+                    <option value="branch">Branch daily report</option>
+                    <option value="whole">Whole Bonibe summary</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>
+                    {reportSource === 'branch'
+                      ? 'Branch'
+                      : reportSource === 'kitchen'
+                        ? 'Kitchen'
+                        : 'Scope'}
+                  </span>
+                  <select
+                    value={selectedLocationId}
+                    disabled={reportSource === 'whole'}
+                    onChange={(event) => {
+                      if (reportSource === 'branch') {
+                        setBranchLocationId(event.target.value)
+                      } else if (reportSource === 'kitchen') {
+                        setKitchenLocationId(event.target.value)
+                      }
+                    }}
+                  >
+                    <option value="all">
+                      {reportSource === 'branch'
+                        ? 'All branches'
+                        : reportSource === 'kitchen'
+                          ? 'All kitchens'
+                          : 'All branches and kitchens'}
+                    </option>
+                    {locationOptions.map((location) => (
                       <option key={location.id} value={location.id}>
                         {location.name}
                       </option>
@@ -116,11 +194,47 @@ export function ReportsPage() {
                   </select>
                 </label>
                 <label className="field">
-                  <span>Production date</span>
+                  <span>Date filter</span>
+                  <select
+                    value={datePreset}
+                    onChange={(event) =>
+                      handlePresetChange(event.target.value as ReportDatePreset)
+                    }
+                  >
+                    <option value="today">Today</option>
+                    <option value="this-week">This Week</option>
+                    <option value="this-month">This Month</option>
+                    <option value="custom">Custom Range</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>From</span>
                   <input
                     type="date"
-                    value={productionDate}
-                    onChange={(event) => setProductionDate(event.target.value)}
+                    value={dateFrom}
+                    onChange={(event) => {
+                      const next = event.target.value
+                      setDatePreset('custom')
+                      setDateFrom(next)
+                      if (dateTo < next) {
+                        setDateTo(next)
+                      }
+                    }}
+                  />
+                </label>
+                <label className="field">
+                  <span>To</span>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(event) => {
+                      const next = event.target.value
+                      setDatePreset('custom')
+                      setDateTo(next)
+                      if (dateFrom > next) {
+                        setDateFrom(next)
+                      }
+                    }}
                   />
                 </label>
               </div>
@@ -133,42 +247,44 @@ export function ReportsPage() {
                       setGenerateStatus,
                       () =>
                         generateReport(data, {
-                          kind: 'branch-daily-production',
+                          kind: selectedReportKind,
                           format: 'xlsx',
-                          locationId: branchLocationId,
+                          locationId: selectedLocationId,
                           productId,
-                          dateFrom: productionDate,
-                          dateTo: productionDate,
+                          dateFrom,
+                          dateTo,
                         }),
-                      'Branch production report generated.',
+                      `${primaryReportLabel.replace('Generate ', '')} generated.`,
                     )
                   }
                 >
                   <FileDown size={18} />
-                  Generate Branch PROD
+                  {primaryReportLabel}
                 </button>
-                <button
-                  className="inline-action"
-                  type="button"
-                  onClick={() =>
-                    void runMutation(
-                      setGenerateStatus,
-                      () =>
-                        generateReport(data, {
-                          kind: 'bonibe-daily-production-summary',
-                          format: 'xlsx',
-                          locationId: 'all',
-                          productId,
-                          dateFrom: productionDate,
-                          dateTo: productionDate,
-                        }),
-                      'Whole Bonibe production summary generated.',
-                    )
-                  }
-                >
-                  <Archive size={16} />
-                  Whole Bonibe XLSX
-                </button>
+                {reportSource !== 'whole' ? (
+                  <button
+                    className="inline-action"
+                    type="button"
+                    onClick={() =>
+                      void runMutation(
+                        setGenerateStatus,
+                        () =>
+                          generateReport(data, {
+                            kind: 'bonibe-daily-production-summary',
+                            format: 'xlsx',
+                            locationId: 'all',
+                            productId,
+                            dateFrom,
+                            dateTo,
+                          }),
+                        'Whole Bonibe production summary generated.',
+                      )
+                    }
+                  >
+                    <Archive size={16} />
+                    Whole Bonibe XLSX
+                  </button>
+                ) : null}
               </div>
             </Panel>
 
@@ -235,5 +351,35 @@ export function ReportsPage() {
 }
 
 function today() {
-  return new Date().toISOString().slice(0, 10)
+  return dateInputValue(new Date())
+}
+
+function rangeForPreset(preset: ReportDatePreset) {
+  const now = new Date()
+  const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const end = dateInputValue(todayDate)
+
+  if (preset === 'this-week') {
+    const start = new Date(todayDate)
+    const mondayOffset = (todayDate.getDay() + 6) % 7
+    start.setDate(todayDate.getDate() - mondayOffset)
+
+    return { dateFrom: dateInputValue(start), dateTo: end }
+  }
+
+  if (preset === 'this-month') {
+    const start = new Date(todayDate.getFullYear(), todayDate.getMonth(), 1)
+
+    return { dateFrom: dateInputValue(start), dateTo: end }
+  }
+
+  return { dateFrom: end, dateTo: end }
+}
+
+function dateInputValue(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
 }

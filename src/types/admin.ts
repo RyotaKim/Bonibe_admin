@@ -144,6 +144,115 @@ export type ProductionAllocation = {
   created_at: string
 }
 
+export type BranchInventorySession = {
+  id: string
+  company_id: string
+  branch_location_id: string
+  business_date: string
+  status: 'draft' | 'open' | 'closed'
+  opened_by: string | null
+  opened_at: string | null
+  closed_by: string | null
+  closed_at: string | null
+  remarks: string | null
+  cash_sales: number
+  expected_cash: number
+  actual_cash: number
+  cash_remarks: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type BranchInventoryLine = {
+  id: string
+  session_id: string
+  product_id: string
+  product_name: string
+  category: string
+  opening_count: number
+  delivery_qty: number
+  sold_qty: number
+  sales_amount: number
+  damage_qty: number
+  return_qty: number
+  mold_qty: number
+  transfer_out_qty: number
+  expected_ending_count: number
+  actual_ending_count: number | null
+  variance_qty: number | null
+  remarks: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type BranchExpense = {
+  id: string
+  branch_id: string
+  business_date: string
+  inventory_session_id: string
+  expense_name: string
+  amount: number
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type KitchenInventorySession = {
+  id: string
+  company_id: string
+  kitchen_location_id: string
+  business_date: string
+  status: 'draft' | 'open' | 'closed'
+  opened_by: string | null
+  opened_at: string | null
+  closed_by: string | null
+  closed_at: string | null
+  remarks: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type KitchenInventoryLine = {
+  id: string
+  session_id: string
+  product_id: string
+  product_name: string
+  category: string
+  unit_price: number
+  previous_remaining_count: number
+  opening_spoilage_qty: number
+  usable_opening_count: number
+  produced_qty: number
+  order_allocation_qty: number
+  manual_allocation_qty: number
+  good_for_qty: number
+  sold_out_qty: number
+  damage_qty: number
+  unknown_loss_qty: number
+  expected_ending_count: number
+  actual_ending_count: number | null
+  variance_qty: number | null
+  remarks: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type KitchenExpense = {
+  id: string
+  kitchen_location_id: string
+  business_date: string
+  inventory_session_id: string
+  expense_name: string
+  amount: number
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 export type BranchLedgerEntry = {
   id: string
   company_id: string
@@ -260,9 +369,12 @@ export type ReportsData = {
   locations: Location[]
   companies: Company[]
   products: Product[]
-  productionReports: ProductionReport[]
-  productionLines: ProductionReportLine[]
-  productionAllocations: ProductionAllocation[]
+  branchInventorySessions: BranchInventorySession[]
+  branchInventoryLines: BranchInventoryLine[]
+  branchExpenses: BranchExpense[]
+  kitchenInventorySessions: KitchenInventorySession[]
+  kitchenInventoryLines: KitchenInventoryLine[]
+  kitchenExpenses: KitchenExpense[]
   branchLedgerEntries: BranchLedgerEntry[]
   clientLedgerEntries: ClientLedgerEntry[]
   damageReturnEntries: DamageReturnEntry[]
