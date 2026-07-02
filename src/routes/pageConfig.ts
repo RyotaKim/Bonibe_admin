@@ -33,9 +33,8 @@ export const pages: PageConfig[] = [
     label: 'Overview',
     icon: Gauge,
     eyebrow: 'Owner console',
-    title: 'Bonibe operations at a glance',
-    summary:
-      'Review production, branch sales, reconciliation, reports, and device sync health.',
+    title: 'Admin Sales Overview',
+    summary: 'Monitor branch sales and latest encoded records.',
   },
   {
     key: 'accounts',

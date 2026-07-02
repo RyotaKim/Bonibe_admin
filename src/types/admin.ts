@@ -331,17 +331,42 @@ export type AdminNotice = {
   message: string
 }
 
+export type DashboardBranch = {
+  id: string
+  name: string
+  active: boolean
+}
+
+export type DashboardBranchRecordDetail = {
+  openingInventory: number
+  soldQuantity: number
+  manualSales: number
+  deliveries: number
+  damages: number
+  returns: number
+  molds: number
+  expenses: number
+  endingInventory: number
+  variance: number
+  lineCount: number
+}
+
+export type DashboardBranchRecord = {
+  sessionId: string
+  branchId: string
+  branchName: string
+  businessDate: string
+  status: BranchInventorySession['status']
+  sales: number
+  expenses: number
+  remarks: string | null
+  updatedAt: string
+  detail: DashboardBranchRecordDetail
+}
+
 export type DashboardData = {
-  counts: {
-    staff: number
-    activeProducts: number
-    activeLocations: number
-    openSync: number
-    reports: number
-  }
-  recentSync: SyncQueueItem[]
-  recentReports: ReportExport[]
-  recentAudit: AuditLog[]
+  branches: DashboardBranch[]
+  records: DashboardBranchRecord[]
   notices: AdminNotice[]
 }
 

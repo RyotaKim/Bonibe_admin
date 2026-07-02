@@ -356,6 +356,174 @@
   line-height: 1;
 }
 
+.sales-metric strong {
+  font-size: clamp(24px, 2.5vw, 34px);
+}
+
+.sales-filter-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 12px;
+}
+
+.segmented-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.segmented-control button {
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 850;
+  padding: 0 12px;
+}
+
+.segmented-control button:hover,
+.segmented-control button.active {
+  border-color: var(--border);
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.compact-date-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.compact-date-field input {
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-strong);
+  padding: 0 10px;
+}
+
+.sales-panel {
+  margin-bottom: 20px;
+}
+
+.sales-panel .panel-heading {
+  align-items: flex-start;
+}
+
+.branch-sales-chart {
+  display: grid;
+  gap: 12px;
+}
+
+.chart-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(120px, 1fr) minmax(110px, auto);
+  align-items: center;
+  gap: 12px;
+}
+
+.chart-row span {
+  color: var(--text-strong);
+  font-weight: 850;
+}
+
+.chart-row strong {
+  color: var(--text-strong);
+  text-align: right;
+}
+
+.chart-track {
+  height: 18px;
+  border-radius: 8px;
+  background: #eef1ea;
+  overflow: hidden;
+}
+
+.chart-bar {
+  height: 100%;
+  border-radius: 8px;
+  background: var(--green);
+}
+
+.sales-table {
+  min-width: 880px;
+}
+
+.recent-sales-table {
+  min-width: 760px;
+}
+
+.muted-text {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.overview-error {
+  margin-bottom: 20px;
+}
+
+.branch-detail-modal {
+  width: min(760px, 100%);
+  max-height: min(720px, calc(100svh - 48px));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 20px 70px rgba(23, 34, 27, 0.24);
+  overflow: auto;
+}
+
+.branch-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px;
+}
+
+.detail-stat {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.detail-stat span {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.detail-stat strong {
+  color: var(--text-strong);
+  font-size: 20px;
+}
+
+.branch-detail-remarks {
+  border-top: 1px solid var(--border);
+  padding: 16px;
+}
+
+.branch-detail-remarks strong {
+  color: var(--text-strong);
+}
+
+.branch-detail-remarks p {
+  color: var(--text-muted);
+  margin: 6px 0 0;
+}
+
 .content-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.95fr);
@@ -785,6 +953,25 @@
   .report-generator-grid {
     grid-template-columns: 1fr;
   }
+
+  .sales-filter-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .compact-date-field {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .chart-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .chart-row strong {
+    text-align: left;
+  }
 }
 
 @media (max-width: 620px) {
@@ -817,6 +1004,10 @@
 
   .confirm-actions {
     flex-direction: column-reverse;
+  }
+
+  .branch-detail-grid {
+    grid-template-columns: 1fr;
   }
 
   .activity-row {

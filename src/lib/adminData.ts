@@ -2,6 +2,9 @@ import { createIsolatedSupabaseClient, requireSupabase } from './supabase'
 import type {
   AdminNotice,
   BranchExpense,
+  DashboardBranch,
+  DashboardBranchRecord,
+  DashboardBranchRecordDetail,
   BranchInventoryLine,
   BranchInventorySession,
   AuditLog,
@@ -35,11 +38,6 @@ type ValidRole = (typeof validRoles)[number]
 
 type ResultList<T> = {
   data: T[]
-  notice: AdminNotice | null
-}
-
-type CountResult = {
-  count: number
   notice: AdminNotice | null
 }
 
@@ -79,26 +77,6 @@ async function selectMaybeOne<T>(
   }
 
   return data
-}
-
-async function countRows(
-  source: string,
-  query: PromiseLike<{
-    count: number | null
-    error: { message: string } | null
-  }>,
-): Promise<CountResult> {
-  try {
-    const { count, error } = await query
-
-    if (error) {
-      return { count: 0, notice: notice(source, error.message) }
-    }
-
-    return { count: count ?? 0, notice: null }
-  } catch (error) {
-    return { count: 0, notice: notice(source, messageFrom(error)) }
-  }
 }
 
 function collectNotices(...items: Array<AdminNotice | null>) {
@@ -176,91 +154,137 @@ export async function getMyProfile(userId: string) {
 export async function fetchDashboard(): Promise<DashboardData> {
   const client = requireSupabase()
 
-  const [
-    staff,
-    products,
-    locations,
-    openSync,
-    reports,
-    recentSync,
-    recentReports,
-    recentAudit,
-  ] = await Promise.all([
-    countRows(
-      'profiles count',
-      client.from('profiles').select('*', { count: 'exact', head: true }),
+  const [locations, sessions, lines, expenses] = await Promise.all([
+    selectList<Location>(
+      'locations',
+      client.from('locations').select('*').order('type').order('name'),
     ),
-    countRows(
-      'products count',
+    selectList<BranchInventorySession>(
+      'branch_inventory_sessions',
       client
-        .from('products')
-        .select('*', { count: 'exact', head: true })
-        .eq('active', true),
-    ),
-    countRows(
-      'locations count',
-      client
-        .from('locations')
-        .select('*', { count: 'exact', head: true })
-        .eq('active', true),
-    ),
-    countRows(
-      'sync_queue count',
-      client
-        .from('sync_queue')
-        .select('*', { count: 'exact', head: true })
-        .neq('status', 'synced'),
-    ),
-    countRows(
-      'report_exports count',
-      client.from('report_exports').select('*', { count: 'exact', head: true }),
-    ),
-    selectList<SyncQueueItem>(
-      'recent sync_queue',
-      client
-        .from('sync_queue')
+        .from('branch_inventory_sessions')
         .select('*')
-        .order('updated_at', { ascending: false })
-        .limit(6),
+        .order('business_date', { ascending: false })
+        .limit(5000),
     ),
-    selectList<ReportExport>(
-      'recent report_exports',
+    selectList<BranchInventoryLine>(
+      'branch_inventory_lines',
+      client.from('branch_inventory_lines').select('*').limit(20000),
+    ),
+    selectList<BranchExpense>(
+      'branch_expenses',
       client
-        .from('report_exports')
+        .from('branch_expenses')
         .select('*')
-        .order('generated_at', { ascending: false })
-        .limit(6),
-    ),
-    selectList<AuditLog>(
-      'recent audit_logs',
-      client.from('audit_logs').select('*').order('created_at', {
-        ascending: false,
-      }),
+        .order('business_date', { ascending: false })
+        .limit(10000),
     ),
   ])
 
+  const branchLocations = locations.data.filter(
+    (location) => location.type === 'branch',
+  )
+  const activeBranchLocations = branchLocations.filter(
+    (location) => location.active,
+  )
+  const branchNameById = new Map(
+    branchLocations.map((location) => [location.id, location.name]),
+  )
+  const branchActiveById = new Map(
+    branchLocations.map((location) => [location.id, location.active]),
+  )
+  const linesBySession = groupBy(lines.data, (line) => line.session_id)
+  const expensesBySession = groupBy(expenses.data, (item) =>
+    item.inventory_session_id,
+  )
+  const branchIds = new Set(
+    activeBranchLocations.map((location) => location.id),
+  )
+
+  sessions.data.forEach((session) => {
+    branchIds.add(session.branch_location_id)
+  })
+
+  const branches: DashboardBranch[] = Array.from(branchIds)
+    .map((branchId) => ({
+      id: branchId,
+      name: branchNameById.get(branchId) ?? branchId,
+      active: branchActiveById.get(branchId) ?? true,
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name))
+
+  const records: DashboardBranchRecord[] = sessions.data.map((session) => {
+    const sessionLines = linesBySession.get(session.id) ?? []
+    const sessionExpenses = expensesBySession.get(session.id) ?? []
+    const detail = summarizeBranchSession(sessionLines, sessionExpenses)
+
+    return {
+      sessionId: session.id,
+      branchId: session.branch_location_id,
+      branchName:
+        branchNameById.get(session.branch_location_id) ??
+        session.branch_location_id,
+      businessDate: session.business_date,
+      status: session.status,
+      sales: detail.manualSales,
+      expenses: detail.expenses,
+      remarks: session.remarks || session.cash_remarks || null,
+      updatedAt: session.updated_at,
+      detail,
+    }
+  })
+
   return {
-    counts: {
-      staff: staff.count,
-      activeProducts: products.count,
-      activeLocations: locations.count,
-      openSync: openSync.count,
-      reports: reports.count,
-    },
-    recentSync: recentSync.data,
-    recentReports: recentReports.data,
-    recentAudit: recentAudit.data.slice(0, 6),
     notices: collectNotices(
-      staff.notice,
-      products.notice,
       locations.notice,
-      openSync.notice,
-      reports.notice,
-      recentSync.notice,
-      recentReports.notice,
-      recentAudit.notice,
+      sessions.notice,
+      lines.notice,
+      expenses.notice,
     ),
+    branches,
+    records,
   }
+}
+
+function summarizeBranchSession(
+  lines: BranchInventoryLine[],
+  expenses: BranchExpense[],
+): DashboardBranchRecordDetail {
+  return {
+    openingInventory: sum(lines, (line) => Number(line.opening_count)),
+    soldQuantity: sum(lines, (line) => Number(line.sold_qty)),
+    manualSales: sum(lines, (line) => Number(line.sales_amount)),
+    deliveries: sum(lines, (line) => Number(line.delivery_qty)),
+    damages: sum(lines, (line) => Number(line.damage_qty)),
+    returns: sum(lines, (line) => Number(line.return_qty)),
+    molds: sum(lines, (line) => Number(line.mold_qty)),
+    expenses: sum(expenses, (item) => Number(item.amount)),
+    endingInventory: sum(lines, (line) =>
+      Number(line.actual_ending_count ?? line.expected_ending_count),
+    ),
+    variance: sum(lines, (line) => Number(line.variance_qty ?? 0)),
+    lineCount: lines.length,
+  }
+}
+
+function groupBy<T>(
+  items: T[],
+  getKey: (item: T) => string,
+): Map<string, T[]> {
+  const grouped = new Map<string, T[]>()
+
+  items.forEach((item) => {
+    const key = getKey(item)
+    const group = grouped.get(key) ?? []
+    group.push(item)
+    grouped.set(key, group)
+  })
+
+  return grouped
+}
+
+function sum<T>(items: T[], getValue: (item: T) => number) {
+  return items.reduce((total, item) => total + getValue(item), 0)
 }
 
 export async function fetchStaff(): Promise<StaffData> {
