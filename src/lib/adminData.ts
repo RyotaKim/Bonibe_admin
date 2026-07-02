@@ -1,4 +1,4 @@
-import { createIsolatedSupabaseClient, requireSupabase } from './supabase'
+import { requireSupabase } from './supabase'
 import type {
   AdminNotice,
   BranchExpense,
@@ -779,7 +779,6 @@ export async function saveProfile(form: FormData) {
 
 export async function createStaffAccount(form: FormData) {
   const client = requireSupabase()
-  const isolatedClient = createIsolatedSupabaseClient()
   const email = String(form.get('email') || '').trim()
   const password = String(form.get('password') || '').trim()
   const confirmPassword = String(form.get('confirm_password') || '').trim()
@@ -810,33 +809,10 @@ export async function createStaffAccount(form: FormData) {
 
   const appRole = role as ValidRole
 
-  const { data: authSignup, error: authError } = await isolatedClient.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        staff_name: staffName,
-        employee_code: employeeCode || null,
-        role: appRole,
-      },
-    },
-  })
-
-  if (authError) {
-    throw createMutationError('Could not create Supabase Auth user', authError)
-  }
-
-  const authUserId = authSignup.user?.id
-  if (!authUserId) {
-    throw new Error(
-      'Supabase Auth did not return a user id for the new account.',
-    )
-  }
-
   const { data, error } = await client.rpc(
     'create_staff_profile_with_location',
     {
-      p_auth_user_id: authUserId,
+      p_auth_user_id: null,
       p_company_id: company,
       p_email: email,
       p_employee_code: employeeCode || null,
@@ -855,8 +831,6 @@ export async function createStaffAccount(form: FormData) {
 
     throw createMutationError('Could not create account profile', error)
   }
-
-  await isolatedClient.auth.signOut()
 
   return data
 }
