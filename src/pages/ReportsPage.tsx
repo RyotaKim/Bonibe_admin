@@ -16,7 +16,7 @@ import { fetchReports } from '../lib/adminData'
 import {
   generateReport,
 } from '../lib/reportGenerator'
-import type { ReportExport, ReportsData } from '../types/admin'
+import type { Location, Profile, ReportExport, ReportsData } from '../types/admin'
 
 type ProductionReportSource = 'branch' | 'kitchen' | 'whole'
 type ReportDatePreset = 'today' | 'this-week' | 'this-month' | 'custom'
@@ -35,16 +35,24 @@ export function ReportsPage() {
   const [dateFrom, setDateFrom] = useState(() => today())
   const [dateTo, setDateTo] = useState(() => today())
   const [generateStatus, setGenerateStatus] = useMutationStatus()
+  const branchAccountLocationIds = useMemo(
+    () => activeAssignedLocationIds(query.data?.profiles ?? [], 'branch'),
+    [query.data?.profiles],
+  )
   const filtered = useMemo(() => {
     const reports = query.data?.reports ?? []
     const locations = query.data?.locations ?? []
 
     return reports.filter((report) => {
       const location = locations.find((item) => item.id === report.location_id)
+      const matchesType =
+        location?.type === locationFilter &&
+        (locationFilter !== 'branch' ||
+          isReportableBranchLocation(location, branchAccountLocationIds))
       const matchesLocation =
         locationFilter === 'all' ||
         report.location_id === locationFilter ||
-        location?.type === locationFilter
+        matchesType
 
       return (
         matchesLocation &&
@@ -62,25 +70,35 @@ export function ReportsPage() {
         .includes(filter.toLowerCase())
       )
     })
-  }, [filter, locationFilter, query.data?.locations, query.data?.reports])
-
+  }, [
+    branchAccountLocationIds,
+    filter,
+    locationFilter,
+    query.data?.locations,
+    query.data?.reports,
+  ])
   const sourceOptions = useMemo(() => {
     const locations = query.data?.locations ?? []
 
     return locations.filter((location) =>
-      ['branch', 'kitchen'].includes(location.type),
+      isReportableBranchLocation(location, branchAccountLocationIds) ||
+      (location.type === 'kitchen' && location.active),
     )
-  }, [query.data?.locations])
+  }, [branchAccountLocationIds, query.data?.locations])
 
   const branchOptions = useMemo(() => {
     const locations = query.data?.locations ?? []
 
-    return locations.filter((location) => location.type === 'branch')
-  }, [query.data?.locations])
+    return locations.filter((location) =>
+      isReportableBranchLocation(location, branchAccountLocationIds),
+    )
+  }, [branchAccountLocationIds, query.data?.locations])
   const kitchenOptions = useMemo(() => {
     const locations = query.data?.locations ?? []
 
-    return locations.filter((location) => location.type === 'kitchen')
+    return locations.filter(
+      (location) => location.type === 'kitchen' && location.active,
+    )
   }, [query.data?.locations])
   const productOptions = useMemo(() => {
     const products = query.data?.products ?? []
@@ -352,6 +370,33 @@ export function ReportsPage() {
 
 function today() {
   return dateInputValue(new Date())
+}
+
+function activeAssignedLocationIds(
+  profiles: Profile[],
+  role: Profile['role'],
+) {
+  return new Set(
+    profiles
+      .filter(
+        (profile) =>
+          profile.active &&
+          profile.role === role &&
+          Boolean(profile.assigned_location_id),
+      )
+      .map((profile) => profile.assigned_location_id as string),
+  )
+}
+
+function isReportableBranchLocation(
+  location: Location,
+  branchAccountLocationIds: Set<string>,
+) {
+  return (
+    location.type === 'branch' &&
+    location.active &&
+    branchAccountLocationIds.has(location.id)
+  )
 }
 
 function rangeForPreset(preset: ReportDatePreset) {

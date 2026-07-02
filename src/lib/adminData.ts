@@ -154,10 +154,14 @@ export async function getMyProfile(userId: string) {
 export async function fetchDashboard(): Promise<DashboardData> {
   const client = requireSupabase()
 
-  const [locations, sessions, lines, expenses] = await Promise.all([
+  const [locations, profiles, sessions, lines, expenses] = await Promise.all([
     selectList<Location>(
       'locations',
       client.from('locations').select('*').order('type').order('name'),
+    ),
+    selectList<Profile>(
+      'profiles',
+      client.from('profiles').select('*').order('staff_name'),
     ),
     selectList<BranchInventorySession>(
       'branch_inventory_sessions',
@@ -181,11 +185,15 @@ export async function fetchDashboard(): Promise<DashboardData> {
     ),
   ])
 
-  const branchLocations = locations.data.filter(
-    (location) => location.type === 'branch',
+  const branchAccountLocationIds = activeAssignedLocationIds(
+    profiles.data,
+    'branch',
   )
-  const activeBranchLocations = branchLocations.filter(
-    (location) => location.active,
+  const branchLocations = locations.data.filter(
+    (location) =>
+      location.type === 'branch' &&
+      location.active &&
+      branchAccountLocationIds.has(location.id),
   )
   const branchNameById = new Map(
     branchLocations.map((location) => [location.id, location.name]),
@@ -198,12 +206,8 @@ export async function fetchDashboard(): Promise<DashboardData> {
     item.inventory_session_id,
   )
   const branchIds = new Set(
-    activeBranchLocations.map((location) => location.id),
+    branchLocations.map((location) => location.id),
   )
-
-  sessions.data.forEach((session) => {
-    branchIds.add(session.branch_location_id)
-  })
 
   const branches: DashboardBranch[] = Array.from(branchIds)
     .map((branchId) => ({
@@ -213,30 +217,33 @@ export async function fetchDashboard(): Promise<DashboardData> {
     }))
     .sort((left, right) => left.name.localeCompare(right.name))
 
-  const records: DashboardBranchRecord[] = sessions.data.map((session) => {
-    const sessionLines = linesBySession.get(session.id) ?? []
-    const sessionExpenses = expensesBySession.get(session.id) ?? []
-    const detail = summarizeBranchSession(sessionLines, sessionExpenses)
+  const records: DashboardBranchRecord[] = sessions.data
+    .filter((session) => branchIds.has(session.branch_location_id))
+    .map((session) => {
+      const sessionLines = linesBySession.get(session.id) ?? []
+      const sessionExpenses = expensesBySession.get(session.id) ?? []
+      const detail = summarizeBranchSession(sessionLines, sessionExpenses)
 
-    return {
-      sessionId: session.id,
-      branchId: session.branch_location_id,
-      branchName:
-        branchNameById.get(session.branch_location_id) ??
-        session.branch_location_id,
-      businessDate: session.business_date,
-      status: session.status,
-      sales: detail.manualSales,
-      expenses: detail.expenses,
-      remarks: session.remarks || session.cash_remarks || null,
-      updatedAt: session.updated_at,
-      detail,
-    }
-  })
+      return {
+        sessionId: session.id,
+        branchId: session.branch_location_id,
+        branchName:
+          branchNameById.get(session.branch_location_id) ??
+          session.branch_location_id,
+        businessDate: session.business_date,
+        status: session.status,
+        sales: detail.manualSales,
+        expenses: detail.expenses,
+        remarks: session.remarks || session.cash_remarks || null,
+        updatedAt: session.updated_at,
+        detail,
+      }
+    })
 
   return {
     notices: collectNotices(
       locations.notice,
+      profiles.notice,
       sessions.notice,
       lines.notice,
       expenses.notice,
@@ -244,6 +251,19 @@ export async function fetchDashboard(): Promise<DashboardData> {
     branches,
     records,
   }
+}
+
+function activeAssignedLocationIds(profiles: Profile[], role: ValidRole) {
+  return new Set(
+    profiles
+      .filter(
+        (profile) =>
+          profile.active &&
+          profile.role === role &&
+          Boolean(profile.assigned_location_id),
+      )
+      .map((profile) => profile.assigned_location_id as string),
+  )
 }
 
 function summarizeBranchSession(
@@ -400,6 +420,7 @@ export async function fetchReports(): Promise<ReportsData> {
   const [
     reports,
     locations,
+    profiles,
     companies,
     products,
     branchInventorySessions,
@@ -423,6 +444,10 @@ export async function fetchReports(): Promise<ReportsData> {
     selectList<Location>(
       'locations',
       client.from('locations').select('*').order('type').order('name'),
+    ),
+    selectList<Profile>(
+      'profiles',
+      client.from('profiles').select('*').order('staff_name'),
     ),
     selectList<Company>(
       'companies',
@@ -501,6 +526,7 @@ export async function fetchReports(): Promise<ReportsData> {
   return {
     reports: await withReportDownloadUrls(reports.data),
     locations: locations.data,
+    profiles: profiles.data,
     companies: companies.data,
     products: products.data,
     branchInventorySessions: branchInventorySessions.data,
@@ -515,6 +541,7 @@ export async function fetchReports(): Promise<ReportsData> {
     notices: collectNotices(
       reports.notice,
       locations.notice,
+      profiles.notice,
       companies.notice,
       products.notice,
       branchInventorySessions.notice,

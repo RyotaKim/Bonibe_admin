@@ -81,7 +81,7 @@ export async function generateAllReports(
 ) {
   const { default: JSZip } = await import('jszip')
   const zip = new JSZip()
-  const branches = data.locations.filter((location) => location.type === 'branch')
+  const branches = reportableBranchLocations(data)
   const clients = data.locations.filter((location) => location.type === 'client')
   const formats: GeneratedReportFormat[] = ['pdf', 'xlsx']
 
@@ -332,7 +332,9 @@ function branchSummaryTable(
   request: GenerateReportRequest,
   cadence: 'Daily' | 'Weekly',
 ): ReportTable {
+  const branchLocationIds = reportableBranchLocationIds(data)
   const rows = data.branchLedgerEntries
+    .filter((entry) => branchLocationIds.has(entry.branch_location_id))
     .filter((entry) => locationMatches(entry.branch_location_id, request.locationId))
     .filter((entry) => dateWithin(entry.ledger_date, request))
     .sort((a, b) => a.ledger_date.localeCompare(b.ledger_date))
@@ -1080,7 +1082,10 @@ function branchInventorySessionsForRequest(
   data: ReportsData,
   request: GenerateReportRequest,
 ) {
+  const branchLocationIds = reportableBranchLocationIds(data)
+
   return data.branchInventorySessions
+    .filter((session) => branchLocationIds.has(session.branch_location_id))
     .filter((session) => locationMatches(session.branch_location_id, request.locationId))
     .filter((session) => dateWithin(session.business_date, request))
     .sort((a, b) =>
@@ -1088,6 +1093,36 @@ function branchInventorySessionsForRequest(
         [b.business_date, locationName(data.locations, b.branch_location_id)].join('|'),
       ),
     )
+}
+
+function reportableBranchLocations(data: ReportsData) {
+  const branchLocationIds = reportableBranchLocationIds(data)
+
+  return data.locations.filter((location) => branchLocationIds.has(location.id))
+}
+
+function reportableBranchLocationIds(data: ReportsData) {
+  const assignedBranchLocationIds = new Set(
+    data.profiles
+      .filter(
+        (profile) =>
+          profile.active &&
+          profile.role === 'branch' &&
+          Boolean(profile.assigned_location_id),
+      )
+      .map((profile) => profile.assigned_location_id as string),
+  )
+
+  return new Set(
+    data.locations
+      .filter(
+        (location) =>
+          location.type === 'branch' &&
+          location.active &&
+          assignedBranchLocationIds.has(location.id),
+      )
+      .map((location) => location.id),
+  )
 }
 
 function kitchenInventorySessionsForRequest(

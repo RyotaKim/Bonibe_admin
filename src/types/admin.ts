@@ -392,6 +392,7 @@ export type StaffData = {
 export type ReportsData = {
   reports: ReportExport[]
   locations: Location[]
+  profiles: Profile[]
   companies: Company[]
   products: Product[]
   branchInventorySessions: BranchInventorySession[]
