@@ -4,7 +4,6 @@ import type {
   BranchExpense,
   DashboardBranch,
   DashboardBranchRecord,
-  DashboardBranchRecordDetail,
   BranchInventoryLine,
   BranchInventorySession,
   AuditLog,
@@ -27,6 +26,8 @@ import type {
   StaffData,
   SyncData,
   SyncQueueItem,
+  SalesEntry,
+  SalesLine,
 } from '../types/admin'
 import { createMutationError, formatError } from '../utils/errors'
 
@@ -154,7 +155,7 @@ export async function getMyProfile(userId: string) {
 export async function fetchDashboard(): Promise<DashboardData> {
   const client = requireSupabase()
 
-  const [locations, profiles, sessions, lines, expenses] = await Promise.all([
+  const [locations, profiles, salesEntries, salesLines] = await Promise.all([
     selectList<Location>(
       'locations',
       client.from('locations').select('*').order('type').order('name'),
@@ -163,25 +164,21 @@ export async function fetchDashboard(): Promise<DashboardData> {
       'profiles',
       client.from('profiles').select('*').order('staff_name'),
     ),
-    selectList<BranchInventorySession>(
-      'branch_inventory_sessions',
+    selectList<SalesEntry>(
+      'sales_entries',
       client
-        .from('branch_inventory_sessions')
+        .from('sales_entries')
         .select('*')
-        .order('business_date', { ascending: false })
-        .limit(5000),
-    ),
-    selectList<BranchInventoryLine>(
-      'branch_inventory_lines',
-      client.from('branch_inventory_lines').select('*').limit(20000),
-    ),
-    selectList<BranchExpense>(
-      'branch_expenses',
-      client
-        .from('branch_expenses')
-        .select('*')
-        .order('business_date', { ascending: false })
+        .eq('status', 'completed')
+        .order('transaction_date', { ascending: false })
         .limit(10000),
+    ),
+    selectList<SalesLine>(
+      'sales_lines',
+      client
+        .from('sales_lines')
+        .select('*')
+        .limit(50000),
     ),
   ])
 
@@ -201,13 +198,57 @@ export async function fetchDashboard(): Promise<DashboardData> {
   const branchActiveById = new Map(
     branchLocations.map((location) => [location.id, location.active]),
   )
-  const linesBySession = groupBy(lines.data, (line) => line.session_id)
-  const expensesBySession = groupBy(expenses.data, (item) =>
-    item.inventory_session_id,
-  )
+
   const branchIds = new Set(
     branchLocations.map((location) => location.id),
   )
+
+  // Group sales entries by branch and date
+  type SalesGroupKey = `${string}|${string}`
+  const salesByBranchAndDate = new Map<SalesGroupKey, SalesEntry[]>()
+
+  salesEntries.data
+    .filter((entry) => branchIds.has(entry.location_id))
+    .forEach((entry) => {
+      const key: SalesGroupKey = `${entry.location_id}|${entry.transaction_date}`
+      const group = salesByBranchAndDate.get(key) ?? []
+      group.push(entry)
+      salesByBranchAndDate.set(key, group)
+    })
+
+  // Build dashboard records from sales data
+  const records: DashboardBranchRecord[] = Array.from(salesByBranchAndDate.entries())
+    .map(([key, entries]) => {
+      const [branchId, transactionDate] = key.split('|')
+      const totalAmount = sum(entries, (entry) => Number(entry.total_amount))
+      const transactionCount = entries.length
+
+      return {
+        sessionId: entries[0]?.id ?? `${branchId}-${transactionDate}`,
+        branchId,
+        branchName: branchNameById.get(branchId) ?? branchId,
+        businessDate: transactionDate,
+        status: 'closed' as const,
+        sales: totalAmount,
+        expenses: 0, // Sales overview focuses on sales, not expenses
+        remarks: null,
+        updatedAt: entries[0]?.updated_at ?? new Date().toISOString(),
+        detail: {
+          openingInventory: 0,
+          soldQuantity: 0,
+          manualSales: totalAmount,
+          deliveries: 0,
+          damages: 0,
+          returns: 0,
+          molds: 0,
+          expenses: 0,
+          endingInventory: 0,
+          variance: 0,
+          lineCount: transactionCount,
+        },
+      }
+    })
+    .sort((a, b) => b.businessDate.localeCompare(a.businessDate))
 
   const branches: DashboardBranch[] = Array.from(branchIds)
     .map((branchId) => ({
@@ -217,36 +258,12 @@ export async function fetchDashboard(): Promise<DashboardData> {
     }))
     .sort((left, right) => left.name.localeCompare(right.name))
 
-  const records: DashboardBranchRecord[] = sessions.data
-    .filter((session) => branchIds.has(session.branch_location_id))
-    .map((session) => {
-      const sessionLines = linesBySession.get(session.id) ?? []
-      const sessionExpenses = expensesBySession.get(session.id) ?? []
-      const detail = summarizeBranchSession(sessionLines, sessionExpenses)
-
-      return {
-        sessionId: session.id,
-        branchId: session.branch_location_id,
-        branchName:
-          branchNameById.get(session.branch_location_id) ??
-          session.branch_location_id,
-        businessDate: session.business_date,
-        status: session.status,
-        sales: detail.manualSales,
-        expenses: detail.expenses,
-        remarks: session.remarks || session.cash_remarks || null,
-        updatedAt: session.updated_at,
-        detail,
-      }
-    })
-
   return {
     notices: collectNotices(
       locations.notice,
       profiles.notice,
-      sessions.notice,
-      lines.notice,
-      expenses.notice,
+      salesEntries.notice,
+      salesLines.notice,
     ),
     branches,
     records,
@@ -264,43 +281,6 @@ function activeAssignedLocationIds(profiles: Profile[], role: ValidRole) {
       )
       .map((profile) => profile.assigned_location_id as string),
   )
-}
-
-function summarizeBranchSession(
-  lines: BranchInventoryLine[],
-  expenses: BranchExpense[],
-): DashboardBranchRecordDetail {
-  return {
-    openingInventory: sum(lines, (line) => Number(line.opening_count)),
-    soldQuantity: sum(lines, (line) => Number(line.sold_qty)),
-    manualSales: sum(lines, (line) => Number(line.sales_amount)),
-    deliveries: sum(lines, (line) => Number(line.delivery_qty)),
-    damages: sum(lines, (line) => Number(line.damage_qty)),
-    returns: sum(lines, (line) => Number(line.return_qty)),
-    molds: sum(lines, (line) => Number(line.mold_qty)),
-    expenses: sum(expenses, (item) => Number(item.amount)),
-    endingInventory: sum(lines, (line) =>
-      Number(line.actual_ending_count ?? line.expected_ending_count),
-    ),
-    variance: sum(lines, (line) => Number(line.variance_qty ?? 0)),
-    lineCount: lines.length,
-  }
-}
-
-function groupBy<T>(
-  items: T[],
-  getKey: (item: T) => string,
-): Map<string, T[]> {
-  const grouped = new Map<string, T[]>()
-
-  items.forEach((item) => {
-    const key = getKey(item)
-    const group = grouped.get(key) ?? []
-    group.push(item)
-    grouped.set(key, group)
-  })
-
-  return grouped
 }
 
 function sum<T>(items: T[], getValue: (item: T) => number) {

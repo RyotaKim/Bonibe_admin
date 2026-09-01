@@ -68,6 +68,28 @@ export type CompositeItem = {
   updated_at: string
 }
 
+export type SalesEntry = {
+  id: string
+  company_id: string
+  location_id: string
+  total_amount: number
+  status: 'completed' | 'voided' | 'pending'
+  transaction_date: string
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type SalesLine = {
+  id: string
+  sales_entry_id: string
+  product_id: string
+  quantity: number
+  unit_price: number
+  line_total: number
+  created_at: string
+}
+
 export type SyncQueueItem = {
   id: string
   company_id: string | null

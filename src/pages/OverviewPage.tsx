@@ -182,7 +182,7 @@ function DashboardContent({
           <div>
             <h2>Branch Sales Overview</h2>
             <p className="panel-note">
-              Simple branch totals from encoded inventory records.
+              Actual POS sales totals by branch.
             </p>
           </div>
         </div>
@@ -192,8 +192,8 @@ function DashboardContent({
       <section className="panel sales-panel">
         <div className="panel-heading">
           <div>
-            <h2>Recent Branch Records</h2>
-            <p className="panel-note">Latest encoded branch sessions.</p>
+            <h2>Recent Sales Transactions</h2>
+            <p className="panel-note">Latest POS sales transactions by date.</p>
           </div>
         </div>
         <RecentRecordsTable
@@ -210,7 +210,7 @@ function SalesMetric({ label, value }: { label: string; value: number }) {
     <article className="metric-card sales-metric">
       <span>{label}</span>
       <strong>{formatMoney(value)}</strong>
-      <small>From branch encoded records</small>
+      <small>From POS transactions</small>
     </article>
   )
 }
@@ -306,7 +306,7 @@ function RecentRecordsTable({
   onViewRecord: (record: DashboardBranchRecord) => void
 }) {
   if (!records.length) {
-    return <EmptyRows label="No branch sales recorded for this period." />
+    return <EmptyRows label="No sales transactions recorded." />
   }
 
   return (
@@ -316,9 +316,8 @@ function RecentRecordsTable({
           <tr>
             <th>Branch</th>
             <th>Date</th>
-            <th>Sales</th>
-            <th>Expenses</th>
-            <th>Remarks</th>
+            <th>Sales Amount</th>
+            <th>Transactions</th>
             <th>Details</th>
           </tr>
         </thead>
@@ -330,8 +329,7 @@ function RecentRecordsTable({
               </td>
               <td>{formatDate(record.businessDate)}</td>
               <td>{formatMoney(record.sales)}</td>
-              <td>{formatMoney(record.expenses)}</td>
-              <td>{record.remarks || 'None'}</td>
+              <td>{formatNumber(record.detail.lineCount)}</td>
               <td>
                 <ViewDetailsButton
                   record={record}
@@ -380,47 +378,20 @@ function BranchDetailModal({
         <div className="preview-header">
           <div>
             <strong>{record.branchName}</strong>
-            <span>{formatDate(record.businessDate)} encoded details</span>
+            <span>{formatDate(record.businessDate)} POS sales summary</span>
           </div>
           <button className="icon-button" type="button" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
         <div className="branch-detail-grid">
+          <DetailStat label="Total Sales Amount" value={formatMoney(detail.manualSales)} />
           <DetailStat
-            label="Opening inventory"
-            value={formatNumber(detail.openingInventory)}
+            label="Transaction Count"
+            value={formatNumber(detail.lineCount)}
           />
-          <DetailStat label="Sales / manual sales" value={formatMoney(detail.manualSales)} />
-          <DetailStat
-            label="Sold quantity"
-            value={formatNumber(detail.soldQuantity)}
-          />
-          <DetailStat
-            label="Deliveries"
-            value={formatNumber(detail.deliveries)}
-          />
-          <DetailStat
-            label="Damages / returns / molds"
-            value={`${formatNumber(detail.damages)} / ${formatNumber(
-              detail.returns,
-            )} / ${formatNumber(detail.molds)}`}
-          />
-          <DetailStat label="Expenses" value={formatMoney(detail.expenses)} />
-          <DetailStat
-            label="Ending inventory"
-            value={formatNumber(detail.endingInventory)}
-          />
-          <DetailStat
-            label="Variance"
-            value={formatNumber(detail.variance)}
-          />
-          <DetailStat label="Record status" value={record.status} />
-          <DetailStat label="Line items" value={formatNumber(detail.lineCount)} />
-        </div>
-        <div className="branch-detail-remarks">
-          <strong>Remarks</strong>
-          <p>{record.remarks || 'None'}</p>
+          <DetailStat label="Record Status" value={record.status} />
+          <DetailStat label="Last Updated" value={formatDate(record.updatedAt)} />
         </div>
       </section>
     </div>
