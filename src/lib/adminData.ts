@@ -169,7 +169,6 @@ export async function fetchDashboard(): Promise<DashboardData> {
       client
         .from('sales_entries')
         .select('*')
-        .eq('status', 'completed')
         .order('transaction_date', { ascending: false })
         .limit(10000),
     ),
