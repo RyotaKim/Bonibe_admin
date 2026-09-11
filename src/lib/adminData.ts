@@ -169,7 +169,7 @@ export async function fetchDashboard(): Promise<DashboardData> {
       client
         .from('sales_entries')
         .select('*')
-        .order('transaction_date', { ascending: false })
+        .order('date', { ascending: false })
         .limit(10000),
     ),
     selectList<SalesLine>(
@@ -209,7 +209,7 @@ export async function fetchDashboard(): Promise<DashboardData> {
   salesEntries.data
     .filter((entry) => branchIds.has(entry.location_id))
     .forEach((entry) => {
-      const key: SalesGroupKey = `${entry.location_id}|${entry.transaction_date}`
+      const key: SalesGroupKey = `${entry.location_id}|${entry.date}`
       const group = salesByBranchAndDate.get(key) ?? []
       group.push(entry)
       salesByBranchAndDate.set(key, group)
