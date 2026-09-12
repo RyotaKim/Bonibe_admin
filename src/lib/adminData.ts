@@ -148,7 +148,7 @@ export async function getMyProfile(userId: string) {
 
   return selectMaybeOne<Profile>(
     'profiles',
-    client.from('profiles').select('*').eq('id', userId).maybeSingle(),
+    client.from('profiles').select('id, company_id, staff_name, employee_code, email, role, assigned_location_id, active, created_at, updated_at').eq('id', userId).maybeSingle(),
   )
 }
 
@@ -158,11 +158,11 @@ export async function fetchDashboard(): Promise<DashboardData> {
   const [locations, profiles, salesEntries, salesLines] = await Promise.all([
     selectList<Location>(
       'locations',
-      client.from('locations').select('*').order('type').order('name'),
+      client.from('locations').select('id, company_id, name, code, type, address, contact_person, active, created_at, updated_at').order('type').order('name'),
     ),
     selectList<Profile>(
       'profiles',
-      client.from('profiles').select('*').order('staff_name'),
+      client.from('profiles').select('id, company_id, staff_name, employee_code, email, role, assigned_location_id, active, created_at, updated_at').order('staff_name'),
     ),
     selectList<SalesEntry>(
       'sales_entries',
@@ -301,11 +301,11 @@ export async function fetchStaff(): Promise<StaffData> {
   const [profiles, locations] = await Promise.all([
     selectList<Profile>(
       'profiles',
-      client.from('profiles').select('*').order('staff_name'),
+      client.from('profiles').select('id, company_id, location_id, total_amount, transaction_date, created_by, created_at, updated_at').order('staff_name'),
     ),
     selectList<Location>(
       'locations',
-      client.from('locations').select('*').order('type').order('name'),
+      client.from('locations').select('id, company_id, name, code, type, address, contact_person, active, created_at, updated_at').order('type').order('name'),
     ),
   ])
 
@@ -322,11 +322,11 @@ export async function fetchCatalog(): Promise<CatalogData> {
   const [products, bundles] = await Promise.all([
     selectList<Product>(
       'products',
-      client.from('products').select('*').order('category').order('name'),
+      client.from('products').select('id, company_id, name, category, unit_price, pieces_per_plate, low_stock_threshold, bundle_eligible, active, created_at, updated_at').order('category').order('name'),
     ),
     selectList<CompositeItem>(
       'composite_items',
-      client.from('composite_items').select('*').order('name'),
+      client.from('composite_items').select('id, company_id, name, bundle_price, active, created_at, updated_at').order('name'),
     ),
   ])
 
@@ -343,15 +343,15 @@ export async function fetchLocations(): Promise<LocationsData> {
   const [companies, locations, profiles] = await Promise.all([
     selectList<Company>(
       'companies',
-      client.from('companies').select('*').order('company_name'),
+      client.from('companies').select('id, company_name, logo_url, address, contact_number, email, receipt_footer, prepared_by_label, checked_by_label, manager_verification_label, auditor_signature_label, created_at, updated_at').order('company_name'),
     ),
     selectList<Location>(
       'locations',
-      client.from('locations').select('*').order('type').order('name'),
+      client.from('locations').select('id, company_id, name, code, type, address, contact_person, active, created_at, updated_at').order('type').order('name'),
     ),
     selectList<Profile>(
       'profiles',
-      client.from('profiles').select('*').order('staff_name'),
+      client.from('profiles').select('id, company_id, staff_name, employee_code, email, role, assigned_location_id, active, created_at, updated_at').order('staff_name'),
     ),
   ])
 
@@ -375,13 +375,13 @@ export async function fetchSyncReview(): Promise<SyncData> {
       'sync_queue',
       client
         .from('sync_queue')
-        .select('*')
+        .select('id, company_id, entity_type, entity_id, action, summary, payload, status, attempts, last_error, created_by, created_at, updated_at')
         .order('updated_at', { ascending: false })
         .limit(100),
     ),
     selectList<AuditLog>(
       'audit_logs',
-      client.from('audit_logs').select('*').order('created_at', {
+      client.from('audit_logs').select('id, company_id, actor_id, action, entity_type, entity_id, before_data, after_data, created_at').order('created_at', {
         ascending: false,
       }),
     ),
@@ -416,43 +416,43 @@ export async function fetchReports(): Promise<ReportsData> {
       'report_exports',
       client
         .from('report_exports')
-        .select('*')
+        .select('id, company_id, report_type, format, filters_json, location_id, product_id, date_from, date_to, file_name, local_path, file_url, generated_by, generated_at, origin, sync_status, created_at, download_url')
         .order('generated_at', { ascending: false })
         .limit(100),
     ),
     selectList<Location>(
       'locations',
-      client.from('locations').select('*').order('type').order('name'),
+      client.from('locations').select('id, company_id, name, code, type, address, contact_person, active, created_at, updated_at').order('type').order('name'),
     ),
     selectList<Profile>(
       'profiles',
-      client.from('profiles').select('*').order('staff_name'),
+      client.from('profiles').select('id, company_id, staff_name, employee_code, email, role, assigned_location_id, active, created_at, updated_at').order('staff_name'),
     ),
     selectList<Company>(
       'companies',
-      client.from('companies').select('*').order('company_name'),
+      client.from('companies').select('id, company_name, logo_url, address, contact_number, email, receipt_footer, prepared_by_label, checked_by_label, manager_verification_label, auditor_signature_label, created_at, updated_at').order('company_name'),
     ),
     selectList<Product>(
       'products',
-      client.from('products').select('*').order('category').order('name'),
+      client.from('products').select('id, company_id, name, category, unit_price, pieces_per_plate, low_stock_threshold, bundle_eligible, active, created_at, updated_at').order('category').order('name'),
     ),
     selectList<BranchInventorySession>(
       'branch_inventory_sessions',
       client
         .from('branch_inventory_sessions')
-        .select('*')
+        .select('id, company_id, branch_location_id, business_date, status, opened_by, opened_at, closed_by, closed_at, remarks, cash_sales, expected_cash, actual_cash, cash_remarks, created_by, created_at, updated_at')
         .order('business_date', { ascending: false })
         .limit(1000),
     ),
     selectList<BranchInventoryLine>(
       'branch_inventory_lines',
-      client.from('branch_inventory_lines').select('*').limit(5000),
+      client.from('branch_inventory_lines').select('id, session_id, product_id, product_name, category, opening_count, delivery_qty, sold_qty, sales_amount, damage_qty, return_qty, mold_qty, transfer_out_qty, expected_ending_count, actual_ending_count, variance_qty, remarks, created_at, updated_at').limit(5000),
     ),
     selectList<BranchExpense>(
       'branch_expenses',
       client
         .from('branch_expenses')
-        .select('*')
+        .select('id, branch_id, business_date, inventory_session_id, expense_name, amount, notes, created_by, created_at, updated_at')
         .order('business_date', { ascending: false })
         .limit(2000),
     ),
@@ -460,19 +460,19 @@ export async function fetchReports(): Promise<ReportsData> {
       'kitchen_inventory_sessions',
       client
         .from('kitchen_inventory_sessions')
-        .select('*')
+        .select('id, company_id, kitchen_location_id, business_date, status, opened_by, opened_at, closed_by, closed_at, remarks, created_by, created_at, updated_at')
         .order('business_date', { ascending: false })
         .limit(1000),
     ),
     selectList<KitchenInventoryLine>(
       'kitchen_inventory_lines',
-      client.from('kitchen_inventory_lines').select('*').limit(5000),
+      client.from('kitchen_inventory_lines').select('id, session_id, product_id, product_name, category, unit_price, previous_remaining_count, opening_spoilage_qty, usable_opening_count, produced_qty, order_allocation_qty, manual_allocation_qty, good_for_qty, sold_out_qty, damage_qty, unknown_loss_qty, expected_ending_count, actual_ending_count, variance_qty, remarks, created_at, updated_at').limit(5000),
     ),
     selectList<KitchenExpense>(
       'kitchen_expenses',
       client
         .from('kitchen_expenses')
-        .select('*')
+        .select('id, kitchen_location_id, business_date, inventory_session_id, expense_name, amount, notes, created_by, created_at, updated_at')
         .order('business_date', { ascending: false })
         .limit(2000),
     ),
@@ -480,7 +480,7 @@ export async function fetchReports(): Promise<ReportsData> {
       'branch_ledger_entries',
       client
         .from('branch_ledger_entries')
-        .select('*')
+        .select('id, company_id, branch_location_id, ledger_date, shift_label, bread_sales, softdrinks, batchoy, short_order, cr, acr, ncr, discount, expenses, returns, end_inventory_value, excess_deficit, remarks, sync_status, created_by, created_at')
         .order('ledger_date', { ascending: false })
         .limit(1000),
     ),
@@ -488,7 +488,7 @@ export async function fetchReports(): Promise<ReportsData> {
       'client_ledger_entries',
       client
         .from('client_ledger_entries')
-        .select('*')
+        .select('id, company_id, client_location_id, product_id, sent_quantity, sold_quantity, return_quantity, damaged_quantity, amount, payment, balance, net_payable, status, notes, sync_status, created_by, created_at')
         .order('created_at', { ascending: false })
         .limit(1000),
     ),
@@ -496,7 +496,7 @@ export async function fetchReports(): Promise<ReportsData> {
       'damages_returns',
       client
         .from('damages_returns')
-        .select('*')
+        .select('id, company_id, location_id, product_id, entry_type, quantity, unit_value, total_value, reason, notes, reconciled, sync_status, created_by, created_at')
         .order('created_at', { ascending: false })
         .limit(1000),
     ),
