@@ -9,6 +9,7 @@ import { SettingsPage } from '../../pages/SettingsPage'
 import { pages } from '../../routes/pageConfig'
 import type { Profile } from '../../types/admin'
 import { getSupabaseStatus, supabase } from '../../lib/supabase'
+import { ThemeSwitcher } from '../ui/ThemeSwitcher'
 
 export function AdminLayout({ profile }: { profile: Profile }) {
   return (
@@ -71,6 +72,7 @@ function TopBar({ profile }: { profile: Profile }) {
           {supabaseStatus.label}
         </span>
         <span className="profile-pill">{profile.staff_name}</span>
+        <ThemeSwitcher />`n        <ThemeSwitcher />
         <button
           className="icon-button"
           type="button"
@@ -83,3 +85,5 @@ function TopBar({ profile }: { profile: Profile }) {
     </header>
   )
 }
+
+

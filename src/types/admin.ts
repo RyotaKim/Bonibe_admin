@@ -73,7 +73,7 @@ export type SalesEntry = {
   company_id: string
   location_id: string
   total_amount: number
-  date: string
+  transaction_date: string
   created_by: string | null
   created_at: string
   updated_at: string

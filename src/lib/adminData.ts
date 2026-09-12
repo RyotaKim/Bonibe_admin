@@ -176,7 +176,7 @@ export async function fetchDashboard(): Promise<DashboardData> {
       'sales_lines',
       client
         .from('sales_lines')
-        .select('*')
+        .select('id, sales_entry_id, product_id, quantity, unit_price, line_total, created_at')
         .limit(50000),
     ),
   ])
