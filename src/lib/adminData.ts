@@ -155,7 +155,7 @@ export async function getMyProfile(userId: string) {
 export async function fetchDashboard(): Promise<DashboardData> {
   const client = requireSupabase()
 
-  const [locations, profiles, salesEntries, salesLines] = await Promise.all([
+  const [locations, profiles, salesEntriesRaw, salesLines] = await Promise.all([
     selectList<Location>(
       'locations',
       client.from('locations').select('id, company_id, name, code, type, address, contact_person, active, created_at, updated_at').order('type').order('name'),
@@ -164,12 +164,12 @@ export async function fetchDashboard(): Promise<DashboardData> {
       'profiles',
       client.from('profiles').select('id, company_id, staff_name, employee_code, email, role, assigned_location_id, active, created_at, updated_at').order('staff_name'),
     ),
-    selectList<SalesEntry>(
+    selectList<any>(
       'sales_entries',
       client
         .from('sales_entries')
-        .select('id, company_id, location_id, total_amount, transaction_date, created_by, created_at, updated_at')
-        .order('transaction_date', { ascending: false })
+        .select('id, company_id, branch_location_id, total, notes, created_by, created_at')
+        .order('created_at', { ascending: false })
         .limit(10000),
     ),
     selectList<SalesLine>(
@@ -180,6 +180,22 @@ export async function fetchDashboard(): Promise<DashboardData> {
         .limit(50000),
     ),
   ])
+
+  const salesEntriesData: SalesEntry[] = salesEntriesRaw.data.map((row: any) => ({
+    id: row.id,
+    company_id: row.company_id,
+    location_id: row.branch_location_id ?? row.location_id ?? '',
+    total_amount: Number(row.total ?? row.total_amount ?? 0),
+    transaction_date: row.created_at ? row.created_at.slice(0, 10) : '',
+    created_by: row.created_by ?? null,
+    created_at: row.created_at ?? '',
+    updated_at: row.created_at ?? '',
+  }))
+
+  const salesEntries = {
+    data: salesEntriesData,
+    notice: salesEntriesRaw.notice,
+  }
 
   const branchAccountLocationIds = activeAssignedLocationIds(
     profiles.data,
@@ -301,7 +317,7 @@ export async function fetchStaff(): Promise<StaffData> {
   const [profiles, locations] = await Promise.all([
     selectList<Profile>(
       'profiles',
-      client.from('profiles').select('id, company_id, location_id, total_amount, transaction_date, created_by, created_at, updated_at').order('staff_name'),
+      client.from('profiles').select('id, company_id, staff_name, employee_code, email, role, assigned_location_id, active, created_at, updated_at').order('staff_name'),
     ),
     selectList<Location>(
       'locations',
@@ -416,7 +432,7 @@ export async function fetchReports(): Promise<ReportsData> {
       'report_exports',
       client
         .from('report_exports')
-        .select('id, company_id, report_type, format, filters_json, location_id, product_id, date_from, date_to, file_name, local_path, file_url, generated_by, generated_at, origin, sync_status, created_at, download_url')
+        .select('id, company_id, report_type, format, filters_json, location_id, product_id, date_from, date_to, file_name, local_path, file_url, generated_by, generated_at, origin, sync_status, created_at')
         .order('generated_at', { ascending: false })
         .limit(100),
     ),
